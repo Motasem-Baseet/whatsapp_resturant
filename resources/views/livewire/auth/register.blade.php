@@ -1,9 +1,9 @@
 <?php
 
 use App\Models\User;
+use App\Services\Auth\RegisterRestaurantOwner;
 use Illuminate\Auth\Events\Registered;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\Rules;
 use Livewire\Attributes\Layout;
 use Livewire\Volt\Component;
@@ -14,8 +14,15 @@ new #[Layout('components.layouts.auth')] class extends Component {
     public string $password = '';
     public string $password_confirmation = '';
 
+    public string $restaurant_name = '';
+    public string $restaurant_phone = '';
+    public string $restaurant_address = '';
+
     /**
      * Handle an incoming registration request.
+     *
+     * Creates the restaurant and its owner user atomically, and signs the
+     * new owner in, only once that succeeds.
      */
     public function register(): void
     {
@@ -23,11 +30,25 @@ new #[Layout('components.layouts.auth')] class extends Component {
             'name' => ['required', 'string', 'max:255'],
             'email' => ['required', 'string', 'lowercase', 'email', 'max:255', 'unique:' . User::class],
             'password' => ['required', 'string', 'confirmed', Rules\Password::defaults()],
+            'restaurant_name' => ['required', 'string', 'max:255'],
+            'restaurant_phone' => ['required', 'string', 'max:30'],
+            'restaurant_address' => ['required', 'string', 'max:255'],
         ]);
 
-        $validated['password'] = Hash::make($validated['password']);
+        $user = app(RegisterRestaurantOwner::class)->handle(
+            owner: [
+                'name' => $validated['name'],
+                'email' => $validated['email'],
+                'password' => $validated['password'],
+            ],
+            restaurant: [
+                'name' => $validated['restaurant_name'],
+                'phone' => $validated['restaurant_phone'],
+                'address' => $validated['restaurant_address'],
+            ],
+        );
 
-        event(new Registered(($user = User::create($validated))));
+        event(new Registered($user));
 
         Auth::login($user);
 
@@ -78,6 +99,25 @@ new #[Layout('components.layouts.auth')] class extends Component {
                 autocomplete="new-password"
                 placeholder="Confirm password"
             />
+        </div>
+
+        <div class="text-sm font-medium text-zinc-600 dark:text-zinc-400">
+            {{ __('Restaurant details') }}
+        </div>
+
+        <!-- Restaurant Name -->
+        <div class="grid gap-2">
+            <flux:input wire:model="restaurant_name" id="restaurant_name" label="{{ __('Restaurant name') }}" type="text" name="restaurant_name" required autocomplete="organization" placeholder="Your restaurant's name" />
+        </div>
+
+        <!-- Restaurant Phone -->
+        <div class="grid gap-2">
+            <flux:input wire:model="restaurant_phone" id="restaurant_phone" label="{{ __('Restaurant phone') }}" type="text" name="restaurant_phone" required autocomplete="tel" placeholder="Restaurant phone number" />
+        </div>
+
+        <!-- Restaurant Address -->
+        <div class="grid gap-2">
+            <flux:input wire:model="restaurant_address" id="restaurant_address" label="{{ __('Restaurant address') }}" type="text" name="restaurant_address" required autocomplete="street-address" placeholder="Restaurant address" />
         </div>
 
         <div class="flex items-center justify-end">
