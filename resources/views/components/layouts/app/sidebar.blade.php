@@ -14,6 +14,10 @@
             <flux:navlist variant="outline">
                 <flux:navlist.group heading="Platform" class="grid">
                     <flux:navlist.item icon="home" :href="route('dashboard')" :current="request()->routeIs('dashboard')" wire:navigate>Dashboard</flux:navlist.item>
+
+                    @can('viewAny', App\Models\User::class)
+                        <flux:navlist.item icon="user-group" :href="route('employees.index')" :current="request()->routeIs('employees.*')" wire:navigate>Employees</flux:navlist.item>
+                    @endcan
                 </flux:navlist.group>
             </flux:navlist>
 

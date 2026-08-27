@@ -17,9 +17,15 @@ class DatabaseSeeder extends Seeder
 
         // User::factory(10)->create();
 
-        User::factory()->create([
-            'name' => 'Test User',
-            'email' => 'test@example.com',
-        ]);
+        // firstOrCreate rather than create(), so re-running db:seed does
+        // not fail on the unique email constraint. The email is pinned
+        // in both arrays deliberately: firstOrCreate's create path is
+        // array_merge($attributes, $values), and raw()'s randomly
+        // generated email would otherwise win that merge and silently
+        // replace the intended address.
+        User::firstOrCreate(
+            ['email' => 'test@example.com'],
+            User::factory()->raw(['name' => 'Test User', 'email' => 'test@example.com']),
+        );
     }
 }

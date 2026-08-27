@@ -9,6 +9,11 @@ use Spatie\Permission\Models\Role;
 class RoleSeeder extends Seeder
 {
     /**
+     * The MVP's fixed set of roles.
+     */
+    public const ROLES = ['owner', 'cashier', 'kitchen'];
+
+    /**
      * Run the database seeds.
      *
      * Uses findOrCreate() so this is safe to run repeatedly (fresh
@@ -16,6 +21,8 @@ class RoleSeeder extends Seeder
      */
     public function run(): void
     {
-        Role::findOrCreate('owner');
+        foreach (self::ROLES as $role) {
+            Role::findOrCreate($role);
+        }
     }
 }

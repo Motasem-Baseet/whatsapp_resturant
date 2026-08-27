@@ -27,6 +27,19 @@ class User extends Authenticatable // implements MustVerifyEmail
     ];
 
     /**
+     * Default attribute values for new, in-memory instances.
+     *
+     * is_active mirrors the database column's own default (true), so a
+     * freshly created model already reflects it in PHP without needing a
+     * round-trip refresh from the database.
+     *
+     * @var array<string, mixed>
+     */
+    protected $attributes = [
+        'is_active' => true,
+    ];
+
+    /**
      * The attributes that should be hidden for serialization.
      *
      * @var list<string>
@@ -46,6 +59,7 @@ class User extends Authenticatable // implements MustVerifyEmail
         return [
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
+            'is_active' => 'boolean',
         ];
     }
 

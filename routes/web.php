@@ -19,4 +19,10 @@ Route::middleware(['auth'])->group(function () {
     Volt::route('settings/appearance', 'settings.appearance')->name('settings.appearance');
 });
 
+Route::middleware(['auth', 'verified', 'role:owner'])->prefix('employees')->name('employees.')->group(function () {
+    Volt::route('/', 'employees.index')->name('index');
+    Volt::route('create', 'employees.create')->name('create');
+    Volt::route('{employee}/edit', 'employees.edit')->name('edit');
+});
+
 require __DIR__.'/auth.php';
