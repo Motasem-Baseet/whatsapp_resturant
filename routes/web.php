@@ -45,6 +45,7 @@ Route::middleware(['auth', 'verified', 'role:owner|cashier'])->group(function ()
     Volt::route('inbox', 'inbox.index')->name('inbox.index');
     Volt::route('conversations/create', 'inbox.conversations.create')->name('conversations.create');
     Volt::route('conversations/{conversation}', 'inbox.conversations.show')->name('conversations.show');
+    Volt::route('conversations/{conversation}/orders/create', 'inbox.conversations.orders.create')->name('conversations.orders.create');
 });
 
 Route::middleware(['auth', 'verified', 'role:owner|cashier'])->prefix('orders')->name('orders.')->group(function () {

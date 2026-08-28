@@ -39,6 +39,22 @@ new #[Layout('components.layouts.app')] class extends Component {
     }
 
     /**
+     * Order history for this conversation. Uses the conversation's own
+     * orders() relationship (Order also has BelongsToRestaurant, so this
+     * is doubly tenant-scoped: $this->conversation itself is only ever
+     * reachable when it belongs to the current restaurant - route-model
+     * binding runs it through Conversation's tenant global scope before
+     * this component ever mounts - and the Order query below is
+     * filtered by the same global scope again) rather than a raw
+     * Order::where('conversation_id', ...) query.
+     */
+    #[Computed]
+    public function orders()
+    {
+        return $this->conversation->orders()->orderByDesc('created_at')->get();
+    }
+
+    /**
      * Owner and cashier users are eligible for assignment; kitchen is
      * not. Uses whereHas() rather than Spatie's role() scope
      * deliberately - role() throws if a named role doesn't exist yet in
@@ -198,7 +214,12 @@ new #[Layout('components.layouts.app')] class extends Component {
             <flux:subheading>{{ $conversation->customer->phone }}</flux:subheading>
         </div>
 
-        <flux:button :href="route('inbox.index')" variant="ghost" wire:navigate>{{ __('Back to inbox') }}</flux:button>
+        <div class="flex items-center gap-2">
+            <flux:button :href="route('conversations.orders.create', $conversation)" variant="primary" size="sm" wire:navigate>
+                {{ __('Create order') }}
+            </flux:button>
+            <flux:button :href="route('inbox.index')" variant="ghost" wire:navigate>{{ __('Back to inbox') }}</flux:button>
+        </div>
     </div>
 
     <div class="mt-6 grid gap-6 md:grid-cols-3">
@@ -275,5 +296,48 @@ new #[Layout('components.layouts.app')] class extends Component {
                 </div>
             </form>
         </div>
+    </div>
+
+    <div class="mt-6 rounded-xl border border-neutral-200 p-4 dark:border-neutral-700">
+        <div class="flex items-center justify-between">
+            <flux:subheading>{{ __('Orders') }}</flux:subheading>
+            <flux:button :href="route('conversations.orders.create', $conversation)" size="sm" wire:navigate>
+                {{ __('Create order') }}
+            </flux:button>
+        </div>
+
+        <flux:table class="mt-3">
+            <flux:table.columns>
+                <flux:table.column>{{ __('Order') }}</flux:table.column>
+                <flux:table.column>{{ __('Status') }}</flux:table.column>
+                <flux:table.column>{{ __('Total') }}</flux:table.column>
+                <flux:table.column>{{ __('Created') }}</flux:table.column>
+                <flux:table.column></flux:table.column>
+            </flux:table.columns>
+
+            <flux:table.rows>
+                @forelse ($this->orders as $order)
+                    <flux:table.row wire:key="order-{{ $order->id }}">
+                        <flux:table.cell>{{ __('Order #:id', ['id' => $order->id]) }}</flux:table.cell>
+                        <flux:table.cell>
+                            <flux:badge size="sm">{{ $order->status->label() }}</flux:badge>
+                        </flux:table.cell>
+                        <flux:table.cell>{{ number_format($order->total, 2) }}</flux:table.cell>
+                        <flux:table.cell>{{ $order->created_at->format('M j, Y g:i A') }}</flux:table.cell>
+                        <flux:table.cell>
+                            <flux:button :href="route('orders.show', $order)" size="sm" wire:navigate>
+                                {{ __('View') }}
+                            </flux:button>
+                        </flux:table.cell>
+                    </flux:table.row>
+                @empty
+                    <flux:table.row>
+                        <flux:table.cell colspan="5" class="text-center text-zinc-500">
+                            {{ __('No orders yet for this conversation.') }}
+                        </flux:table.cell>
+                    </flux:table.row>
+                @endforelse
+            </flux:table.rows>
+        </flux:table>
     </div>
 </section>
