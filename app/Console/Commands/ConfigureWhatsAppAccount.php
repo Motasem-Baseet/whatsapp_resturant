@@ -4,14 +4,18 @@ namespace App\Console\Commands;
 
 use App\Models\Restaurant;
 use App\Models\WhatsAppAccount;
+use App\Services\WhatsApp\ConfigureWhatsAppAccount as ConfigureWhatsAppAccountService;
 use Illuminate\Console\Command;
-use Illuminate\Support\Str;
 
 /**
  * Provisions (or updates) a restaurant's WhatsApp Cloud API account.
- * A console command rather than a settings UI - this is server-admin
- * configuration (access tokens, app secrets), not something an owner
- * or cashier should ever see or edit through the browser.
+ * A console command, kept alongside the Phase 14 settings UI for
+ * server-admin/deployment use - both now share their actual
+ * field-assignment logic via App\Services\WhatsApp\
+ * ConfigureWhatsAppAccount, so they cannot drift into different
+ * behavior. This command still prints the verify_token directly to the
+ * operator's own terminal (a trusted server-admin context); the web UI
+ * deliberately never redisplays it - see that service's docblock.
  */
 class ConfigureWhatsAppAccount extends Command
 {
@@ -40,14 +44,15 @@ class ConfigureWhatsAppAccount extends Command
         $account = WhatsAppAccount::withoutGlobalScopes()
             ->firstOrNew(['phone_number_id' => $this->argument('phone_number_id')]);
 
-        $account->restaurant_id = $restaurant->id;
-        $account->access_token = $this->argument('access_token');
-        $account->business_account_id = $this->option('business-account-id');
-        $account->display_phone_number = $this->option('display-phone-number');
-        $account->app_secret = $this->option('app-secret');
-        $account->verify_token = $this->option('verify-token') ?: ($account->verify_token ?: Str::random(32));
-        $account->is_active = ! $this->option('inactive');
-        $account->save();
+        app(ConfigureWhatsAppAccountService::class)->handle($restaurant, $account, [
+            'phone_number_id' => $this->argument('phone_number_id'),
+            'access_token' => $this->argument('access_token'),
+            'business_account_id' => $this->option('business-account-id'),
+            'display_phone_number' => $this->option('display-phone-number'),
+            'app_secret' => $this->option('app-secret'),
+            'verify_token' => $this->option('verify-token'),
+            'is_active' => ! $this->option('inactive'),
+        ]);
 
         $this->info("WhatsApp account configured for restaurant #{$restaurant->id}.");
         $this->line("verify_token: {$account->verify_token}");
