@@ -30,6 +30,10 @@
                     @can('viewAny', App\Models\Customer::class)
                         <flux:navlist.item icon="users" :href="route('customers.index')" :current="request()->routeIs('customers.*')" wire:navigate>Customers</flux:navlist.item>
                     @endcan
+
+                    @can('viewReports', App\Models\Order::class)
+                        <flux:navlist.item icon="chart-bar" :href="route('reports.orders')" :current="request()->routeIs('reports.*')" wire:navigate>Reports</flux:navlist.item>
+                    @endcan
                 </flux:navlist.group>
 
                 @can('viewAny', App\Models\Category::class)

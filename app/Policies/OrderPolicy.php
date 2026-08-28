@@ -41,6 +41,21 @@ class OrderPolicy
         return $user->hasRole('owner') || $user->hasRole('cashier');
     }
 
+    /**
+     * Historical order reporting/analytics (Phase 23) is owner-only,
+     * unlike general order viewAny/view/update - it surfaces
+     * restaurant-wide financial data (revenue, average order value,
+     * top customers' total spend) that this codebase has consistently
+     * kept owner-only elsewhere (see EmployeePolicy, ProductPolicy,
+     * CategoryPolicy's own viewAny). A separate ability rather than
+     * folding this into viewAny keeps that existing owner|cashier rule
+     * for ordinary order access completely unchanged.
+     */
+    public function viewReports(User $user): bool
+    {
+        return $user->hasRole('owner');
+    }
+
     protected function owns(User $user, Order $order): bool
     {
         return $this->hasOrderAccess($user)

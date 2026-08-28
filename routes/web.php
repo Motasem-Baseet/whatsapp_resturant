@@ -73,4 +73,8 @@ Route::middleware(['auth', 'verified', 'role:kitchen'])->prefix('kitchen')->name
     Volt::route('orders/{order}', 'kitchen.orders.show')->name('orders.show');
 });
 
+Route::middleware(['auth', 'verified', 'role:owner'])->prefix('reports')->name('reports.')->group(function () {
+    Volt::route('orders', 'reports.orders')->name('orders');
+});
+
 require __DIR__.'/auth.php';
