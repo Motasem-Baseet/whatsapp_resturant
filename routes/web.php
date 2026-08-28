@@ -47,4 +47,10 @@ Route::middleware(['auth', 'verified', 'role:owner|cashier'])->group(function ()
     Volt::route('conversations/{conversation}', 'inbox.conversations.show')->name('conversations.show');
 });
 
+Route::middleware(['auth', 'verified', 'role:owner|cashier'])->prefix('orders')->name('orders.')->group(function () {
+    Volt::route('/', 'orders.index')->name('index');
+    Volt::route('create', 'orders.create')->name('create');
+    Volt::route('{order}', 'orders.show')->name('show');
+});
+
 require __DIR__.'/auth.php';

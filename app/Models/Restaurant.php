@@ -70,4 +70,20 @@ class Restaurant extends Model
     {
         return $this->hasMany(Message::class);
     }
+
+    /**
+     * The orders that belong to this restaurant.
+     */
+    public function orders(): HasMany
+    {
+        return $this->hasMany(Order::class);
+    }
+
+    /**
+     * The order items that belong to this restaurant.
+     */
+    public function orderItems(): HasMany
+    {
+        return $this->hasMany(OrderItem::class);
+    }
 }

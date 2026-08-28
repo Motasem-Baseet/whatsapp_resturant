@@ -19,6 +19,10 @@
                         <flux:navlist.item icon="inbox" :href="route('inbox.index')" :current="request()->routeIs('inbox.*') || request()->routeIs('conversations.*')" wire:navigate>Inbox</flux:navlist.item>
                     @endcan
 
+                    @can('viewAny', App\Models\Order::class)
+                        <flux:navlist.item icon="clipboard-document-list" :href="route('orders.index')" :current="request()->routeIs('orders.*')" wire:navigate>Orders</flux:navlist.item>
+                    @endcan
+
                     @can('viewAny', App\Models\User::class)
                         <flux:navlist.item icon="user-group" :href="route('employees.index')" :current="request()->routeIs('employees.*')" wire:navigate>Employees</flux:navlist.item>
                     @endcan

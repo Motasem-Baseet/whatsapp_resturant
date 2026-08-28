@@ -71,4 +71,12 @@ class Conversation extends Model
     {
         return $this->hasMany(Message::class);
     }
+
+    /**
+     * The orders that originated from this conversation.
+     */
+    public function orders(): HasMany
+    {
+        return $this->hasMany(Order::class);
+    }
 }
