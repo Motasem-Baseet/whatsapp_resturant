@@ -86,4 +86,13 @@ class Restaurant extends Model
     {
         return $this->hasMany(OrderItem::class);
     }
+
+    /**
+     * The WhatsApp Cloud API accounts configured for this restaurant.
+     * A restaurant may have more than one.
+     */
+    public function whatsAppAccounts(): HasMany
+    {
+        return $this->hasMany(WhatsAppAccount::class);
+    }
 }

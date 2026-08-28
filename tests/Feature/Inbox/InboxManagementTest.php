@@ -8,8 +8,10 @@ use App\Models\Customer;
 use App\Models\Message;
 use App\Models\Restaurant;
 use App\Models\User;
+use App\Models\WhatsAppAccount;
 use App\Services\Inbox\AssignConversation;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Http;
 use InvalidArgumentException;
 use Livewire\Volt\Volt;
 use Spatie\Permission\Models\Role;
@@ -329,20 +331,28 @@ class InboxManagementTest extends TestCase
     }
 
     // --- Messages -------------------------------------------------------
+    //
+    // Local test messaging (sendLocalMessage) was replaced in Phase 9 by
+    // real WhatsApp sending (sendMessage) - see tests/Feature/WhatsApp/
+    // OutboundMessageTest.php for the full outbound-sending coverage.
+    // These three regression tests exercise the same Livewire action via
+    // its new, real send path.
 
-    public function test_local_message_gets_correct_restaurant_id(): void
+    public function test_sent_message_gets_correct_restaurant_id(): void
     {
         $restaurant = Restaurant::factory()->create();
         $owner = $this->createOwner($restaurant);
         $customer = Customer::factory()->create(['restaurant_id' => $restaurant->id]);
         $conversation = Conversation::factory()->create(['restaurant_id' => $restaurant->id, 'customer_id' => $customer->id]);
+        WhatsAppAccount::factory()->create(['restaurant_id' => $restaurant->id]);
+
+        Http::fake(['*' => Http::response(['messages' => [['id' => 'wamid.OUT1']]], 200)]);
 
         $this->actingAs($owner);
 
         Volt::test('inbox.conversations.show', ['conversation' => $conversation])
-            ->set('message_direction', 'outbound')
             ->set('message_content', 'Hello there')
-            ->call('sendLocalMessage')
+            ->call('sendMessage')
             ->assertHasNoErrors();
 
         $message = Message::where('content', 'Hello there')->firstOrFail();
@@ -351,25 +361,25 @@ class InboxManagementTest extends TestCase
         $this->assertSame($conversation->id, $message->conversation_id);
     }
 
-    public function test_local_message_direction_must_be_valid(): void
+    public function test_send_message_requires_content(): void
     {
         $restaurant = Restaurant::factory()->create();
         $owner = $this->createOwner($restaurant);
         $customer = Customer::factory()->create(['restaurant_id' => $restaurant->id]);
         $conversation = Conversation::factory()->create(['restaurant_id' => $restaurant->id, 'customer_id' => $customer->id]);
+        WhatsAppAccount::factory()->create(['restaurant_id' => $restaurant->id]);
 
         $this->actingAs($owner);
 
         Volt::test('inbox.conversations.show', ['conversation' => $conversation])
-            ->set('message_direction', 'sideways')
-            ->set('message_content', 'Invalid direction')
-            ->call('sendLocalMessage')
-            ->assertHasErrors(['message_direction']);
+            ->set('message_content', '')
+            ->call('sendMessage')
+            ->assertHasErrors(['message_content']);
 
-        $this->assertDatabaseMissing('messages', ['content' => 'Invalid direction']);
+        $this->assertDatabaseMissing('messages', ['conversation_id' => $conversation->id]);
     }
 
-    public function test_sending_a_local_message_updates_conversation_last_message_at(): void
+    public function test_sending_a_message_updates_conversation_last_message_at(): void
     {
         $restaurant = Restaurant::factory()->create();
         $owner = $this->createOwner($restaurant);
@@ -379,13 +389,15 @@ class InboxManagementTest extends TestCase
             'customer_id' => $customer->id,
             'last_message_at' => null,
         ]);
+        WhatsAppAccount::factory()->create(['restaurant_id' => $restaurant->id]);
+
+        Http::fake(['*' => Http::response(['messages' => [['id' => 'wamid.OUT2']]], 200)]);
 
         $this->actingAs($owner);
 
         Volt::test('inbox.conversations.show', ['conversation' => $conversation])
-            ->set('message_direction', 'outbound')
             ->set('message_content', 'Hello there')
-            ->call('sendLocalMessage');
+            ->call('sendMessage');
 
         $this->assertNotNull($conversation->fresh()->last_message_at);
     }

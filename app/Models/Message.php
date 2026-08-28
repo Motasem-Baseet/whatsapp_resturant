@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Enums\MessageDirection;
+use App\Enums\MessageStatus;
 use App\Models\Concerns\BelongsToRestaurant;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -27,6 +28,7 @@ class Message extends Model
         'direction',
         'content',
         'provider_message_id',
+        'status',
         'sent_at',
         'received_at',
     ];
@@ -40,6 +42,7 @@ class Message extends Model
     {
         return [
             'direction' => MessageDirection::class,
+            'status' => MessageStatus::class,
             'sent_at' => 'datetime',
             'received_at' => 'datetime',
         ];

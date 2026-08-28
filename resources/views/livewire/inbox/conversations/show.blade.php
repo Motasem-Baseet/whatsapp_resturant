@@ -1,9 +1,11 @@
 <?php
 
 use App\Enums\ConversationStatus;
+use App\Exceptions\WhatsAppMessageSendException;
 use App\Models\Conversation;
+use App\Models\WhatsAppAccount;
 use App\Services\Inbox\AssignConversation;
-use App\Services\Inbox\CreateMessage;
+use App\Services\WhatsApp\SendWhatsAppMessage;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Validation\Rule;
 use Livewire\Attributes\Computed;
@@ -14,7 +16,6 @@ new #[Layout('components.layouts.app')] class extends Component {
     public Conversation $conversation;
 
     public string $assigned_user_id = '';
-    public string $message_direction = 'outbound';
     public string $message_content = '';
 
     public function mount(Conversation $conversation): void
@@ -98,28 +99,44 @@ new #[Layout('components.layouts.app')] class extends Component {
     }
 
     /**
-     * Create a local test message so the conversation/message domain
-     * can be exercised end to end. This does NOT send anything through
-     * WhatsApp - there is no provider integration yet.
+     * Send a real WhatsApp text message to this conversation's customer.
+     *
+     * Re-authorizes here rather than trusting mount()-time authorization -
+     * a long-lived page session must not let a since-revoked or
+     * since-reassigned user keep sending. The WhatsAppAccount is resolved
+     * from the conversation's own restaurant only; the client controls
+     * nothing but the message text.
      */
-    public function sendLocalMessage(): void
+    public function sendMessage(): void
     {
         $this->authorize('update', $this->conversation);
 
         $validated = $this->validate([
-            'message_direction' => ['required', 'in:inbound,outbound'],
             'message_content' => ['required', 'string', 'max:2000'],
         ]);
 
-        app(CreateMessage::class)->handle($this->conversation, [
-            'direction' => $validated['message_direction'],
-            'content' => $validated['message_content'],
-            'sent_at' => $validated['message_direction'] === 'outbound' ? now() : null,
-            'received_at' => $validated['message_direction'] === 'inbound' ? now() : null,
-        ]);
+        $account = WhatsAppAccount::query()
+            ->where('restaurant_id', $this->conversation->restaurant_id)
+            ->where('is_active', true)
+            ->first();
+
+        if (! $account) {
+            $this->addError('message_content', __('No active WhatsApp account is configured for this restaurant.'));
+
+            return;
+        }
+
+        try {
+            app(SendWhatsAppMessage::class)->handle($account, $this->conversation, Auth::user(), $validated['message_content']);
+        } catch (WhatsAppMessageSendException $e) {
+            $this->addError('message_content', $e->getMessage());
+
+            return;
+        }
 
         $this->reset('message_content');
         $this->conversation->refresh();
+        session()->flash('status', __('Message sent.'));
     }
 }; ?>
 
@@ -186,19 +203,18 @@ new #[Layout('components.layouts.app')] class extends Component {
         </div>
 
         <div class="mt-6 border-t border-neutral-200 pt-4 dark:border-neutral-700">
-            <flux:subheading>{{ __('Add a local test message') }}</flux:subheading>
-            <p class="text-xs text-zinc-500">{{ __('This is a local test message only - it is not sent through WhatsApp.') }}</p>
+            <flux:subheading>{{ __('Send a WhatsApp message') }}</flux:subheading>
 
-            <form wire:submit="sendLocalMessage" class="mt-3 flex flex-col gap-3">
-                <flux:select wire:model="message_direction" label="{{ __('Direction') }}" class="max-w-xs">
-                    <flux:select.option value="outbound">{{ __('Outbound (Restaurant to customer)') }}</flux:select.option>
-                    <flux:select.option value="inbound">{{ __('Inbound (Customer to restaurant)') }}</flux:select.option>
-                </flux:select>
+            @if (session('status'))
+                <p class="text-xs text-green-600">{{ session('status') }}</p>
+            @endif
 
+            <form wire:submit="sendMessage" class="mt-3 flex flex-col gap-3">
                 <flux:textarea wire:model="message_content" label="{{ __('Message') }}" />
+                @error('message_content') <p class="text-xs text-red-600">{{ $message }}</p> @enderror
 
                 <div>
-                    <flux:button type="submit" variant="primary" size="sm">{{ __('Add message') }}</flux:button>
+                    <flux:button type="submit" variant="primary" size="sm">{{ __('Send') }}</flux:button>
                 </div>
             </form>
         </div>

@@ -35,4 +35,14 @@ return [
         ],
     ],
 
+    /*
+    | WhatsApp Cloud API. Per-restaurant secrets (access_token,
+    | app_secret, verify_token) live on the WhatsAppAccount model, not
+    | here - this is only the shared, non-secret API endpoint config.
+    */
+    'whatsapp' => [
+        'base_url' => env('WHATSAPP_GRAPH_BASE_URL', 'https://graph.facebook.com'),
+        'graph_version' => env('WHATSAPP_GRAPH_VERSION', 'v21.0'),
+    ],
+
 ];
