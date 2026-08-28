@@ -28,11 +28,17 @@ class UpdateOrderStatus
      *         Optional so existing/direct callers (tests, tooling)
      *         remain valid; a transition made with no acting user is
      *         recorded with a null changed_by.
+     * @param  string|null  $cancellationReason  Optional free-text
+     *         reason, persisted on the order itself only when given -
+     *         only meaningful for a transition into Cancelled, but not
+     *         restricted to it here; the caller decides when it applies.
+     *         Never written if the transition below is rejected, so a
+     *         failed cancellation can never leave a reason behind.
      *
      * @throws InvalidOrderStatusTransitionException if the transition is
      *         not allowed from the order's current status.
      */
-    public function handle(Order $order, OrderStatus $status, ?User $changedBy = null): Order
+    public function handle(Order $order, OrderStatus $status, ?User $changedBy = null, ?string $cancellationReason = null): Order
     {
         if (! $order->status->canTransitionTo($status)) {
             throw InvalidOrderStatusTransitionException::from($order->status, $status);
@@ -41,6 +47,11 @@ class UpdateOrderStatus
         $from = $order->status;
 
         $order->status = $status;
+
+        if ($cancellationReason !== null) {
+            $order->cancellation_reason = $cancellationReason;
+        }
+
         $order->save();
 
         $history = new OrderStatusHistory([

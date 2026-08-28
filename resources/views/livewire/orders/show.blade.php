@@ -13,6 +13,14 @@ use Livewire\Volt\Component;
 new #[Layout('components.layouts.app')] class extends Component {
     public Order $order;
 
+    /**
+     * Bound only to the cancellation modal's textarea - never
+     * mass-assigned onto the order (Order::$fillable deliberately
+     * excludes cancellation_reason), only ever passed explicitly as a
+     * typed argument to UpdateOrderStatus::handle() below.
+     */
+    public string $cancellationReason = '';
+
     public function mount(Order $order): void
     {
         $this->authorize('view', $order);
@@ -49,6 +57,43 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->order->refresh();
 
         session()->flash('status', __('Order status updated.'));
+    }
+
+    /**
+     * The confirmed-cancellation path, invoked only from the cancel
+     * modal's form. Deliberately separate from transitionTo() rather
+     * than folding a reason parameter into it, so the generic
+     * transition action's signature stays untouched for every other
+     * status (and every existing test calling it). Re-authorizes and
+     * re-validates independently of whatever the modal displayed,
+     * since the modal itself is UX only, not the security boundary.
+     */
+    public function cancelOrder(): void
+    {
+        $this->authorize('update', $this->order);
+
+        $validated = $this->validate([
+            'cancellationReason' => ['nullable', 'string', 'max:1000'],
+        ]);
+
+        try {
+            app(UpdateOrderStatus::class)->handle(
+                $this->order,
+                OrderStatus::Cancelled,
+                Auth::user(),
+                $validated['cancellationReason'] !== '' ? $validated['cancellationReason'] : null,
+            );
+        } catch (InvalidOrderStatusTransitionException $e) {
+            $this->addError('status', $e->getMessage());
+
+            return;
+        }
+
+        $this->order->refresh();
+        $this->cancellationReason = '';
+        $this->modal('cancel-order')->close();
+
+        session()->flash('status', __('Order cancelled.'));
     }
 
     /**
@@ -136,12 +181,29 @@ new #[Layout('components.layouts.app')] class extends Component {
                 <p class="mt-1 text-sm text-red-600">{{ __($order->attentionMessage()) }}</p>
             @endif
 
-            @if (! empty($order->status->allowedTransitions()))
+            @if ($order->status === OrderStatus::Cancelled)
+                <div class="mt-3 rounded-lg bg-red-50 p-3 text-sm dark:bg-red-950">
+                    <p class="font-medium text-red-700 dark:text-red-400">{{ __('This order was cancelled and cannot be reopened.') }}</p>
+                    @if ($order->cancellation_reason)
+                        <p class="mt-1 text-zinc-600 dark:text-zinc-400">{{ __('Reason: :reason', ['reason' => $order->cancellation_reason]) }}</p>
+                    @endif
+                </div>
+            @elseif ($order->status === OrderStatus::Completed)
+                <p class="mt-3 text-sm text-zinc-500">{{ __('This order is complete. No further action is needed.') }}</p>
+            @elseif (! empty($order->status->allowedTransitions()))
                 <div class="mt-3 flex flex-wrap gap-2">
                     @foreach ($order->status->allowedTransitions() as $nextStatus)
-                        <flux:button wire:click="transitionTo('{{ $nextStatus->value }}')" size="sm">
-                            {{ __('Mark :status', ['status' => $nextStatus->label()]) }}
-                        </flux:button>
+                        @if ($nextStatus === OrderStatus::Cancelled)
+                            <flux:modal.trigger name="cancel-order">
+                                <flux:button size="sm" variant="danger" x-data="" x-on:click.prevent="$dispatch('open-modal', 'cancel-order')">
+                                    {{ __('Cancel order') }}
+                                </flux:button>
+                            </flux:modal.trigger>
+                        @else
+                            <flux:button wire:click="transitionTo('{{ $nextStatus->value }}')" size="sm" variant="{{ $nextStatus === OrderStatus::Completed ? 'primary' : 'filled' }}">
+                                {{ __('Mark :status', ['status' => $nextStatus->label()]) }}
+                            </flux:button>
+                        @endif
                     @endforeach
                 </div>
             @endif
@@ -225,4 +287,27 @@ new #[Layout('components.layouts.app')] class extends Component {
             @endforeach
         </ol>
     </div>
+
+    <flux:modal name="cancel-order" :show="$errors->has('status') || $errors->has('cancellationReason')" focusable class="max-w-lg">
+        <form wire:submit="cancelOrder" class="space-y-6">
+            <div>
+                <flux:heading size="lg">{{ __('Cancel this order?') }}</flux:heading>
+                <flux:subheading>
+                    {{ __('This is a terminal action - once cancelled, this order can never return to the normal lifecycle.') }}
+                </flux:subheading>
+            </div>
+
+            @error('status') <p class="text-sm text-red-600">{{ $message }}</p> @enderror
+
+            <flux:textarea wire:model="cancellationReason" label="{{ __('Reason (optional)') }}" rows="3" maxlength="1000" />
+
+            <div class="flex justify-end gap-2">
+                <flux:modal.close>
+                    <flux:button variant="filled">{{ __('Close') }}</flux:button>
+                </flux:modal.close>
+
+                <flux:button variant="danger" type="submit">{{ __('Confirm cancellation') }}</flux:button>
+            </div>
+        </form>
+    </flux:modal>
 </section>
