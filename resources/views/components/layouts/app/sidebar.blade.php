@@ -38,6 +38,12 @@
                         <flux:navlist.item icon="shopping-bag" :href="route('menu.products.index')" :current="request()->routeIs('menu.products.*')" wire:navigate>Products</flux:navlist.item>
                     </flux:navlist.group>
                 @endcan
+
+                @can('viewAnyAsKitchen', App\Models\Order::class)
+                    <flux:navlist.group heading="Kitchen" class="grid">
+                        <flux:navlist.item icon="clipboard-document-list" :href="route('kitchen.orders.index')" :current="request()->routeIs('kitchen.*')" wire:navigate>Orders</flux:navlist.item>
+                    </flux:navlist.group>
+                @endcan
             </flux:navlist>
 
             <flux:spacer />
