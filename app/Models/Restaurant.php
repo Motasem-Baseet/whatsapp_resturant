@@ -46,4 +46,12 @@ class Restaurant extends Model
     {
         return $this->hasMany(Product::class);
     }
+
+    /**
+     * The customers that belong to this restaurant.
+     */
+    public function customers(): HasMany
+    {
+        return $this->hasMany(Customer::class);
+    }
 }

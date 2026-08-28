@@ -18,6 +18,10 @@
                     @can('viewAny', App\Models\User::class)
                         <flux:navlist.item icon="user-group" :href="route('employees.index')" :current="request()->routeIs('employees.*')" wire:navigate>Employees</flux:navlist.item>
                     @endcan
+
+                    @can('viewAny', App\Models\Customer::class)
+                        <flux:navlist.item icon="users" :href="route('customers.index')" :current="request()->routeIs('customers.*')" wire:navigate>Customers</flux:navlist.item>
+                    @endcan
                 </flux:navlist.group>
 
                 @can('viewAny', App\Models\Category::class)

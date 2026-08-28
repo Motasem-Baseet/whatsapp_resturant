@@ -35,4 +35,10 @@ Route::middleware(['auth', 'verified', 'role:owner'])->prefix('menu')->name('men
     Volt::route('products/{product}/edit', 'menu.products.edit')->name('products.edit');
 });
 
+Route::middleware(['auth', 'verified', 'role:owner'])->prefix('customers')->name('customers.')->group(function () {
+    Volt::route('/', 'customers.index')->name('index');
+    Volt::route('create', 'customers.create')->name('create');
+    Volt::route('{customer}/edit', 'customers.edit')->name('edit');
+});
+
 require __DIR__.'/auth.php';
