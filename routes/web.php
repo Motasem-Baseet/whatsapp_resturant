@@ -21,6 +21,7 @@ Route::middleware(['auth'])->group(function () {
 
 Route::middleware(['auth', 'verified', 'role:owner'])->group(function () {
     Volt::route('settings/whatsapp', 'settings.whatsapp')->name('settings.whatsapp');
+    Volt::route('settings/restaurant', 'settings.restaurant')->name('settings.restaurant');
 });
 
 Route::middleware(['auth', 'verified', 'role:owner'])->prefix('employees')->name('employees.')->group(function () {

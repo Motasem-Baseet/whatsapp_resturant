@@ -6,6 +6,7 @@
             <flux:navlist.item href="{{ route('settings.appearance') }}" wire:navigate>Appearance</flux:navlist.item>
 
             @if (auth()->user()->hasRole('owner'))
+                <flux:navlist.item href="{{ route('settings.restaurant') }}" wire:navigate>Restaurant</flux:navlist.item>
                 <flux:navlist.item href="{{ route('settings.whatsapp') }}" wire:navigate>WhatsApp</flux:navlist.item>
             @endif
         </flux:navlist>

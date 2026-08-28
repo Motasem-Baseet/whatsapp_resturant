@@ -4,6 +4,7 @@ use App\Models\WhatsAppAccount;
 use App\Services\WhatsApp\ConfigureWhatsAppAccount;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Validation\Rule;
+use Livewire\Attributes\Layout;
 use Livewire\Volt\Component;
 
 /**
@@ -22,7 +23,7 @@ use Livewire\Volt\Component;
  * never populated from the model, and reset to empty again after every
  * save.
  */
-new class extends Component {
+new #[Layout('components.layouts.app')] class extends Component {
     public string $phone_number_id = '';
     public string $business_account_id = '';
     public string $display_phone_number = '';
