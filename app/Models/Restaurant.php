@@ -88,6 +88,16 @@ class Restaurant extends Model
     }
 
     /**
+     * The order status transition audit rows that belong to this
+     * restaurant - used by GetOrderReport's operational performance
+     * metrics to stay tenant-rooted rather than joining through Order.
+     */
+    public function orderStatusHistories(): HasMany
+    {
+        return $this->hasMany(OrderStatusHistory::class);
+    }
+
+    /**
      * The WhatsApp Cloud API accounts configured for this restaurant.
      * A restaurant may have more than one.
      */
