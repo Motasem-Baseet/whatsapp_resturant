@@ -10,6 +10,7 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Validation\Rule;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Layout;
+use Livewire\Attributes\On;
 use Livewire\Volt\Component;
 
 new #[Layout('components.layouts.app')] class extends Component {
@@ -138,6 +139,39 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->conversation->refresh();
         session()->flash('status', __('Message sent.'));
     }
+
+    /**
+     * Fired by MessageCreated on this restaurant's inbox channel - could
+     * be for any conversation in the restaurant, so it is ignored unless
+     * it matches the conversation currently being viewed. When it does
+     * match, no client data is trusted or appended directly: the empty
+     * body just triggers a re-render, and messages() (a Computed
+     * property, re-evaluated fresh on every request) re-queries the
+     * conversation's messages from the database - which is what
+     * actually shows the new message and makes replayed/duplicate
+     * events naturally harmless, since re-querying the same DB state
+     * twice produces the same result both times.
+     */
+    #[On('echo-private:restaurants.{conversation.restaurant_id}.inbox,.message.created')]
+    public function onMessageCreated(array $event): void
+    {
+        if ((int) ($event['conversation_id'] ?? 0) !== $this->conversation->id) {
+            return;
+        }
+    }
+
+    /**
+     * Same reasoning as onMessageCreated() - only re-renders (picking up
+     * the updated status via a fresh messages() query) when the event
+     * belongs to the conversation currently on screen.
+     */
+    #[On('echo-private:restaurants.{conversation.restaurant_id}.inbox,.message.status-updated')]
+    public function onMessageStatusUpdated(array $event): void
+    {
+        if ((int) ($event['conversation_id'] ?? 0) !== $this->conversation->id) {
+            return;
+        }
+    }
 }; ?>
 
 <section class="w-full">
@@ -196,6 +230,9 @@ new #[Layout('components.layouts.app')] class extends Component {
                         {{ ($message->sent_at ?? $message->received_at ?? $message->created_at)->format('M j, Y g:i A') }}
                     </div>
                     <div class="mt-1">{{ $message->content }}</div>
+                    @if ($message->direction === \App\Enums\MessageDirection::Outbound && $message->status)
+                        <div class="mt-1 text-[10px] uppercase tracking-wide text-zinc-400">{{ $message->status->value }}</div>
+                    @endif
                 </div>
             @empty
                 <p class="text-sm text-zinc-500">{{ __('No messages yet.') }}</p>

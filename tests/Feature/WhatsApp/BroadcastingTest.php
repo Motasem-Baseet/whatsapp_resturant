@@ -14,6 +14,7 @@ use App\Services\Inbox\CreateMessage;
 use App\Services\WhatsApp\UpdateMessageDeliveryStatus;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Event;
+use Spatie\Permission\Models\Role;
 use Tests\TestCase;
 
 class BroadcastingTest extends TestCase
@@ -55,7 +56,58 @@ class BroadcastingTest extends TestCase
      * signing (see PusherBroadcaster::validAuthenticationResponse) - no
      * network call is made, so this is safe without a running server.
      */
-    public function test_a_user_from_the_owning_restaurant_can_authorize_the_inbox_channel(): void
+    public function test_an_owner_from_the_owning_restaurant_can_authorize_the_inbox_channel(): void
+    {
+        $this->useReverbBroadcaster();
+        $restaurant = Restaurant::factory()->create();
+        $user = User::factory()->create(['restaurant_id' => $restaurant->id]);
+        $user->assignRole(Role::findOrCreate('owner'));
+
+        $response = $this->actingAs($user)->post('/broadcasting/auth', [
+            'channel_name' => "private-restaurants.{$restaurant->id}.inbox",
+            'socket_id' => '1234.5678',
+        ]);
+
+        $response->assertOk();
+    }
+
+    public function test_a_cashier_from_the_owning_restaurant_can_authorize_the_inbox_channel(): void
+    {
+        $this->useReverbBroadcaster();
+        $restaurant = Restaurant::factory()->create();
+        $user = User::factory()->create(['restaurant_id' => $restaurant->id]);
+        $user->assignRole(Role::findOrCreate('cashier'));
+
+        $response = $this->actingAs($user)->post('/broadcasting/auth', [
+            'channel_name' => "private-restaurants.{$restaurant->id}.inbox",
+            'socket_id' => '1234.5678',
+        ]);
+
+        $response->assertOk();
+    }
+
+    /**
+     * Kitchen has never had inbox access at the route/policy level (see
+     * ConversationPolicy::hasInboxAccess) - the broadcast channel now
+     * reuses that same policy, so kitchen is excluded from the
+     * real-time channel too, not just the HTTP routes.
+     */
+    public function test_a_kitchen_user_cannot_authorize_the_inbox_channel(): void
+    {
+        $this->useReverbBroadcaster();
+        $restaurant = Restaurant::factory()->create();
+        $user = User::factory()->create(['restaurant_id' => $restaurant->id]);
+        $user->assignRole(Role::findOrCreate('kitchen'));
+
+        $response = $this->actingAs($user)->post('/broadcasting/auth', [
+            'channel_name' => "private-restaurants.{$restaurant->id}.inbox",
+            'socket_id' => '1234.5678',
+        ]);
+
+        $response->assertForbidden();
+    }
+
+    public function test_a_user_with_no_role_cannot_authorize_the_inbox_channel(): void
     {
         $this->useReverbBroadcaster();
         $restaurant = Restaurant::factory()->create();
@@ -66,7 +118,7 @@ class BroadcastingTest extends TestCase
             'socket_id' => '1234.5678',
         ]);
 
-        $response->assertOk();
+        $response->assertForbidden();
     }
 
     public function test_a_user_from_a_different_restaurant_cannot_authorize_the_inbox_channel(): void
@@ -75,6 +127,7 @@ class BroadcastingTest extends TestCase
         $restaurantA = Restaurant::factory()->create();
         $restaurantB = Restaurant::factory()->create();
         $userB = User::factory()->create(['restaurant_id' => $restaurantB->id]);
+        $userB->assignRole(Role::findOrCreate('owner'));
 
         $response = $this->actingAs($userB)->post('/broadcasting/auth', [
             'channel_name' => "private-restaurants.{$restaurantA->id}.inbox",
