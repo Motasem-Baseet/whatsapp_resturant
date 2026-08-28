@@ -4,6 +4,8 @@ use App\Enums\OrderStatus;
 use App\Exceptions\InvalidOrderStatusTransitionException;
 use App\Models\Order;
 use App\Services\Orders\UpdateOrderStatus;
+use Illuminate\Support\Facades\Auth;
+use Livewire\Attributes\Computed;
 use Livewire\Attributes\Layout;
 use Livewire\Volt\Component;
 
@@ -28,7 +30,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->authorize('update', $this->order);
 
         try {
-            app(UpdateOrderStatus::class)->handle($this->order, OrderStatus::from($status));
+            app(UpdateOrderStatus::class)->handle($this->order, OrderStatus::from($status), Auth::user());
         } catch (InvalidOrderStatusTransitionException $e) {
             $this->addError('status', $e->getMessage());
 
@@ -38,6 +40,20 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->order->refresh();
 
         session()->flash('status', __('Order status updated.'));
+    }
+
+    /**
+     * Recomputed on every render (rather than loaded once in mount())
+     * so it stays current after transitionTo() records a new row,
+     * without needing a separate manual reload.
+     */
+    #[Computed]
+    public function statusHistory()
+    {
+        return $this->order->statusHistory()
+            ->with('changedBy')
+            ->latest()
+            ->get();
     }
 }; ?>
 
@@ -131,5 +147,23 @@ new #[Layout('components.layouts.app')] class extends Component {
                 <p class="mt-1 text-sm">{{ $order->notes }}</p>
             </div>
         @endif
+    </div>
+
+    <div class="mt-6 rounded-xl border border-neutral-200 p-4 dark:border-neutral-700">
+        <flux:subheading>{{ __('Status history') }}</flux:subheading>
+
+        <ul class="mt-3 flex flex-col gap-2 text-sm">
+            @forelse ($this->statusHistory as $entry)
+                <li class="flex items-center justify-between border-b border-neutral-100 pb-2 last:border-0 last:pb-0 dark:border-neutral-800">
+                    <span>
+                        {{ __(':from → :to', ['from' => OrderStatus::from($entry->from_status)->label(), 'to' => OrderStatus::from($entry->to_status)->label()]) }}
+                        <span class="text-zinc-500">{{ __('by :name', ['name' => $entry->changedBy?->name ?? __('Unknown')]) }}</span>
+                    </span>
+                    <span class="text-zinc-500">{{ $entry->created_at->format('M j, Y g:i A') }}</span>
+                </li>
+            @empty
+                <li class="text-zinc-500">{{ __('No status changes yet.') }}</li>
+            @endforelse
+        </ul>
     </div>
 </section>

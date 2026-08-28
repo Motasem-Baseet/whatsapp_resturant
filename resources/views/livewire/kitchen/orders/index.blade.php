@@ -5,6 +5,7 @@ use App\Models\Order;
 use Illuminate\Support\Facades\Auth;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Layout;
+use Livewire\Attributes\On;
 use Livewire\Volt\Component;
 
 new #[Layout('components.layouts.app')] class extends Component {
@@ -47,6 +48,33 @@ new #[Layout('components.layouts.app')] class extends Component {
             ->get()
             ->sortBy(fn ($order) => $priority[$order->status->value])
             ->values();
+    }
+
+    /**
+     * Used only to address this user's own restaurant's broadcast
+     * channel below, matching inbox/index.blade.php's own
+     * restaurantId()/channel-authorization reasoning.
+     */
+    #[Computed]
+    public function restaurantId(): int
+    {
+        return Auth::user()->restaurant_id;
+    }
+
+    /**
+     * Fired on every successful status transition, from either entry
+     * point - most valuable here, since a transition can make an order
+     * appear in or disappear from this status-filtered list entirely
+     * (e.g. confirmed -> preparing, or preparing -> ready leaving the
+     * kitchen's active queue once completed). Nothing from the payload
+     * is trusted; the empty body just triggers a re-render, re-running
+     * the tenant- and status-scoped orders() query above fresh from the
+     * database.
+     */
+    #[On('echo-private:restaurants.{restaurantId}.orders,.order.status-updated')]
+    public function onOrderStatusUpdated(): void
+    {
+        //
     }
 }; ?>
 

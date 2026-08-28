@@ -78,4 +78,13 @@ class Order extends Model
     {
         return $this->hasMany(OrderItem::class);
     }
+
+    /**
+     * The audit trail of status transitions, recorded by
+     * UpdateOrderStatus on every successful change.
+     */
+    public function statusHistory(): HasMany
+    {
+        return $this->hasMany(OrderStatusHistory::class);
+    }
 }

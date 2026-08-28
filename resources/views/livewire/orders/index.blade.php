@@ -4,6 +4,7 @@ use App\Models\Order;
 use Illuminate\Support\Facades\Auth;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Layout;
+use Livewire\Attributes\On;
 use Livewire\Volt\Component;
 
 new #[Layout('components.layouts.app')] class extends Component {
@@ -20,6 +21,30 @@ new #[Layout('components.layouts.app')] class extends Component {
             ->with('customer')
             ->orderByDesc('created_at')
             ->get();
+    }
+
+    /**
+     * Used only to address this user's own restaurant's broadcast
+     * channel below, matching inbox/index.blade.php's own
+     * restaurantId()/channel-authorization reasoning.
+     */
+    #[Computed]
+    public function restaurantId(): int
+    {
+        return Auth::user()->restaurant_id;
+    }
+
+    /**
+     * Fired on every successful status transition via
+     * OrderStatusUpdated, from either the owner/cashier or kitchen
+     * entry point. Nothing from the payload is trusted; the empty body
+     * just triggers Livewire to re-render, re-running the tenant-scoped
+     * orders() query above fresh from the database.
+     */
+    #[On('echo-private:restaurants.{restaurantId}.orders,.order.status-updated')]
+    public function onOrderStatusUpdated(): void
+    {
+        //
     }
 }; ?>
 

@@ -4,6 +4,7 @@ use App\Enums\OrderStatus;
 use App\Exceptions\InvalidOrderStatusTransitionException;
 use App\Models\Order;
 use App\Services\Orders\UpdateOrderStatus;
+use Illuminate\Support\Facades\Auth;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Layout;
 use Livewire\Volt\Component;
@@ -72,7 +73,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->authorize('canTransitionAsKitchen', [$this->order, $target]);
 
         try {
-            app(UpdateOrderStatus::class)->handle($this->order, $target);
+            app(UpdateOrderStatus::class)->handle($this->order, $target, Auth::user());
         } catch (InvalidOrderStatusTransitionException $e) {
             $this->addError('status', $e->getMessage());
 
