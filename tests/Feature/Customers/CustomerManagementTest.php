@@ -335,14 +335,20 @@ class CustomerManagementTest extends TestCase
 
     // --- Authorization ------------------------------------------------
 
-    public function test_cashier_cannot_access_customer_management(): void
+    /**
+     * Phase 17 deliberately widened customer *viewing* (list + profile)
+     * to include cashier, matching Order/Conversation's existing
+     * owner-or-cashier access model - but customer creation/editing
+     * remains owner-only, unchanged from Phase 5 (see CustomerPolicy).
+     */
+    public function test_cashier_can_view_but_not_manage_customers(): void
     {
         $restaurant = Restaurant::factory()->create();
         $cashier = $this->createEmployee($restaurant, 'cashier');
 
         $this->actingAs($cashier);
 
-        $this->get(route('customers.index'))->assertForbidden();
+        $this->get(route('customers.index'))->assertOk();
         $this->get(route('customers.create'))->assertForbidden();
     }
 

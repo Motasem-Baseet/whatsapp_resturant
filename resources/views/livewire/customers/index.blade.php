@@ -4,9 +4,12 @@ use App\Models\Customer;
 use Illuminate\Support\Facades\Auth;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Layout;
+use Livewire\WithPagination;
 use Livewire\Volt\Component;
 
 new #[Layout('components.layouts.app')] class extends Component {
+    use WithPagination;
+
     public string $search = '';
 
     public function mount(): void
@@ -14,10 +17,15 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->authorize('viewAny', Customer::class);
     }
 
+    public function updatedSearch(): void
+    {
+        $this->resetPage();
+    }
+
     /**
      * Customers belonging to the current restaurant, optionally filtered
      * by name or phone. The base query is always scoped through the
-     * current owner's own restaurant relationship, so search can never
+     * current user's own restaurant relationship, so search can never
      * surface another restaurant's customers.
      */
     #[Computed]
@@ -32,7 +40,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 });
             })
             ->orderBy('name')
-            ->get();
+            ->paginate(15);
     }
 }; ?>
 
@@ -43,9 +51,11 @@ new #[Layout('components.layouts.app')] class extends Component {
             <flux:subheading>{{ __('People who order from your restaurant.') }}</flux:subheading>
         </div>
 
-        <flux:button :href="route('customers.create')" variant="primary" wire:navigate>
-            {{ __('Add customer') }}
-        </flux:button>
+        @can('create', Customer::class)
+            <flux:button :href="route('customers.create')" variant="primary" wire:navigate>
+                {{ __('Add customer') }}
+            </flux:button>
+        @endcan
     </div>
 
     <flux:input
@@ -72,9 +82,16 @@ new #[Layout('components.layouts.app')] class extends Component {
                     <flux:table.cell class="max-w-xs truncate">{{ $customer->notes }}</flux:table.cell>
                     <flux:table.cell>{{ $customer->created_at->format('M j, Y') }}</flux:table.cell>
                     <flux:table.cell>
-                        <flux:button :href="route('customers.edit', $customer)" size="sm" wire:navigate>
-                            {{ __('Edit') }}
-                        </flux:button>
+                        <div class="flex items-center gap-2">
+                            <flux:button :href="route('customers.show', $customer)" size="sm" wire:navigate>
+                                {{ __('View') }}
+                            </flux:button>
+                            @can('update', $customer)
+                                <flux:button :href="route('customers.edit', $customer)" size="sm" variant="ghost" wire:navigate>
+                                    {{ __('Edit') }}
+                                </flux:button>
+                            @endcan
+                        </div>
                     </flux:table.cell>
                 </flux:table.row>
             @empty
@@ -86,4 +103,8 @@ new #[Layout('components.layouts.app')] class extends Component {
             @endforelse
         </flux:table.rows>
     </flux:table>
+
+    <div class="mt-4">
+        {{ $this->customers->links() }}
+    </div>
 </section>

@@ -40,10 +40,19 @@ Route::middleware(['auth', 'verified', 'role:owner'])->prefix('menu')->name('men
     Volt::route('products/{product}/edit', 'menu.products.edit')->name('products.edit');
 });
 
+// The "create" route must be registered before the "{customer}"
+// wildcard route below - otherwise Laravel would try to match
+// /customers/create against {customer} first (since routes are matched
+// in registration order), attempting to bind a Customer with route key
+// "create" instead of reaching the create page.
 Route::middleware(['auth', 'verified', 'role:owner'])->prefix('customers')->name('customers.')->group(function () {
-    Volt::route('/', 'customers.index')->name('index');
     Volt::route('create', 'customers.create')->name('create');
     Volt::route('{customer}/edit', 'customers.edit')->name('edit');
+});
+
+Route::middleware(['auth', 'verified', 'role:owner|cashier'])->prefix('customers')->name('customers.')->group(function () {
+    Volt::route('/', 'customers.index')->name('index');
+    Volt::route('{customer}', 'customers.show')->name('show');
 });
 
 Route::middleware(['auth', 'verified', 'role:owner|cashier'])->group(function () {
