@@ -16,7 +16,7 @@
                     <flux:navlist.item icon="home" :href="route('dashboard')" :current="request()->routeIs('dashboard')" wire:navigate>Dashboard</flux:navlist.item>
 
                     @can('viewAny', App\Models\Conversation::class)
-                        <flux:navlist.item icon="inbox" :href="route('inbox.index')" :current="request()->routeIs('inbox.*') || request()->routeIs('conversations.*')" wire:navigate>Inbox</flux:navlist.item>
+                        <livewire:inbox.unread-badge />
                     @endcan
 
                     @can('viewAny', App\Models\Order::class)

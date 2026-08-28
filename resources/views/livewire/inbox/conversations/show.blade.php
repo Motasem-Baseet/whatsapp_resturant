@@ -5,6 +5,7 @@ use App\Exceptions\WhatsAppMessageSendException;
 use App\Models\Conversation;
 use App\Models\WhatsAppAccount;
 use App\Services\Inbox\AssignConversation;
+use App\Services\Inbox\MarkConversationAsRead;
 use App\Services\WhatsApp\SendWhatsAppMessage;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Validation\Rule;
@@ -25,6 +26,10 @@ new #[Layout('components.layouts.app')] class extends Component {
 
         $this->conversation = $conversation;
         $this->assigned_user_id = $conversation->assigned_user_id ? (string) $conversation->assigned_user_id : '';
+
+        // Opening the conversation marks it read for this user only -
+        // other users' read state is a separate row and is untouched.
+        app(MarkConversationAsRead::class)->handle($conversation, Auth::user());
     }
 
     #[Computed]
@@ -151,6 +156,14 @@ new #[Layout('components.layouts.app')] class extends Component {
      * actually shows the new message and makes replayed/duplicate
      * events naturally harmless, since re-querying the same DB state
      * twice produces the same result both times.
+     *
+     * Also re-marks the conversation read for the user actively viewing
+     * it: mount() only runs once when the page first loads, so without
+     * this a new message arriving while the page is already open would
+     * leave it "unread" for the very user looking at it. Re-authorizes
+     * here rather than trusting mount()-time authorization, matching
+     * sendMessage()'s reasoning - a long-lived page session must not
+     * keep acting as a since-revoked user.
      */
     #[On('echo-private:restaurants.{conversation.restaurant_id}.inbox,.message.created')]
     public function onMessageCreated(array $event): void
@@ -158,6 +171,10 @@ new #[Layout('components.layouts.app')] class extends Component {
         if ((int) ($event['conversation_id'] ?? 0) !== $this->conversation->id) {
             return;
         }
+
+        $this->authorize('view', $this->conversation);
+
+        app(MarkConversationAsRead::class)->handle($this->conversation, Auth::user());
     }
 
     /**
@@ -202,6 +219,9 @@ new #[Layout('components.layouts.app')] class extends Component {
 
         <div class="rounded-xl border border-neutral-200 p-4 dark:border-neutral-700 md:col-span-2">
             <flux:subheading>{{ __('Assigned to') }}</flux:subheading>
+            <p class="mt-1 text-sm font-medium">
+                {{ $conversation->assignedUser?->name ?? __('Unassigned') }}
+            </p>
             <form wire:submit="assign" class="mt-2 flex items-center gap-3">
                 <flux:select wire:model="assigned_user_id" placeholder="{{ __('Unassigned') }}" class="max-w-xs">
                     <flux:select.option value="">{{ __('Unassigned') }}</flux:select.option>

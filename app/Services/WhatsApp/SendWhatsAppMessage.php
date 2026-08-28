@@ -10,6 +10,7 @@ use App\Models\Message;
 use App\Models\User;
 use App\Models\WhatsAppAccount;
 use App\Services\Inbox\CreateMessage;
+use App\Services\Inbox\MarkConversationAsRead;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
@@ -22,7 +23,10 @@ use Illuminate\Support\Facades\Log;
  */
 class SendWhatsAppMessage
 {
-    public function __construct(protected CreateMessage $createMessage) {}
+    public function __construct(
+        protected CreateMessage $createMessage,
+        protected MarkConversationAsRead $markConversationAsRead,
+    ) {}
 
     /**
      * @throws WhatsAppMessageSendException when the account does not
@@ -71,12 +75,20 @@ class SendWhatsAppMessage
 
         $providerMessageId = data_get($response->json(), 'messages.0.id');
 
-        return $this->createMessage->handle($conversation, [
+        $message = $this->createMessage->handle($conversation, [
             'direction' => MessageDirection::Outbound,
             'content' => $body,
             'provider_message_id' => $providerMessageId,
             'status' => MessageStatus::Sent,
             'sent_at' => now(),
         ]);
+
+        // The sender has necessarily seen everything in the conversation
+        // up to and including the message they just sent - advance their
+        // own read state so they don't get an unread badge for their own
+        // outbound message. Other users' read state is untouched.
+        $this->markConversationAsRead->handle($conversation, $user);
+
+        return $message;
     }
 }
