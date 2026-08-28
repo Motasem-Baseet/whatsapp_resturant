@@ -7,6 +7,7 @@ use App\Services\Orders\UpdateOrderStatus;
 use Illuminate\Support\Facades\Auth;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Layout;
+use Livewire\Attributes\On;
 use Livewire\Volt\Component;
 
 new #[Layout('components.layouts.app')] class extends Component {
@@ -45,15 +46,43 @@ new #[Layout('components.layouts.app')] class extends Component {
     /**
      * Recomputed on every render (rather than loaded once in mount())
      * so it stays current after transitionTo() records a new row,
-     * without needing a separate manual reload.
+     * without needing a separate manual reload. Ordered oldest-first so
+     * the timeline reads top-to-bottom in the order events actually
+     * happened; created_at is the primary sort with id as a tiebreaker
+     * for transitions recorded within the same second.
      */
     #[Computed]
     public function statusHistory()
     {
         return $this->order->statusHistory()
             ->with('changedBy')
-            ->latest()
+            ->orderBy('created_at')
+            ->orderBy('id')
             ->get();
+    }
+
+    /**
+     * Fired on every successful transition, from either the owner/
+     * cashier or kitchen entry point (both go through the same
+     * UpdateOrderStatus service). Only reacts when the event names the
+     * order currently open on this page - an update to some other
+     * order in the same restaurant is silently ignored, matching
+     * inbox/conversations/show.blade.php's own
+     * onMessageCreated()/onMessageStatusUpdated() reasoning.
+     *
+     * The event payload itself is never trusted as data - it is only a
+     * signal to re-query. The order (and therefore the status and
+     * available transitions) is reloaded straight from the database,
+     * which remains the sole source of truth.
+     */
+    #[On('echo-private:restaurants.{order.restaurant_id}.orders,.order.status-updated')]
+    public function onOrderStatusUpdated(array $event): void
+    {
+        if ((int) ($event['id'] ?? 0) !== $this->order->id) {
+            return;
+        }
+
+        $this->order->refresh();
     }
 }; ?>
 
@@ -150,20 +179,33 @@ new #[Layout('components.layouts.app')] class extends Component {
     </div>
 
     <div class="mt-6 rounded-xl border border-neutral-200 p-4 dark:border-neutral-700">
-        <flux:subheading>{{ __('Status history') }}</flux:subheading>
+        <flux:subheading>{{ __('Status timeline') }}</flux:subheading>
 
-        <ul class="mt-3 flex flex-col gap-2 text-sm">
-            @forelse ($this->statusHistory as $entry)
-                <li class="flex items-center justify-between border-b border-neutral-100 pb-2 last:border-0 last:pb-0 dark:border-neutral-800">
-                    <span>
+        <ol class="mt-4 flex flex-col gap-4 border-l-2 border-neutral-200 pl-4 dark:border-neutral-700">
+            {{-- The order's original status is always Pending (see
+                 CreateOrder) but order_status_histories only records
+                 transitions, not the creation itself - this bookend is
+                 rendered directly from the order's own created_at, never
+                 written to the database, so it can never be mistaken for
+                 a real audit row. --}}
+            <li>
+                <flux:badge size="sm">{{ OrderStatus::Pending->label() }}</flux:badge>
+                <p class="mt-1 text-sm font-medium">{{ __('Order created') }}</p>
+                <p class="text-sm text-zinc-500">{{ $order->created_at->format('M j, Y g:i A') }}</p>
+            </li>
+
+            @foreach ($this->statusHistory as $entry)
+                <li>
+                    <flux:badge size="sm">{{ OrderStatus::from($entry->to_status)->label() }}</flux:badge>
+                    <p class="mt-1 text-sm font-medium">
                         {{ __(':from → :to', ['from' => OrderStatus::from($entry->from_status)->label(), 'to' => OrderStatus::from($entry->to_status)->label()]) }}
-                        <span class="text-zinc-500">{{ __('by :name', ['name' => $entry->changedBy?->name ?? __('Unknown')]) }}</span>
-                    </span>
-                    <span class="text-zinc-500">{{ $entry->created_at->format('M j, Y g:i A') }}</span>
+                    </p>
+                    <p class="text-sm text-zinc-500">
+                        {{ __('by :name', ['name' => $entry->changedBy?->name ?? __('Unknown')]) }}
+                        &middot; {{ $entry->created_at->format('M j, Y g:i A') }}
+                    </p>
                 </li>
-            @empty
-                <li class="text-zinc-500">{{ __('No status changes yet.') }}</li>
-            @endforelse
-        </ul>
+            @endforeach
+        </ol>
     </div>
 </section>

@@ -7,6 +7,7 @@ use App\Services\Orders\UpdateOrderStatus;
 use Illuminate\Support\Facades\Auth;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Layout;
+use Livewire\Attributes\On;
 use Livewire\Volt\Component;
 
 new #[Layout('components.layouts.app')] class extends Component {
@@ -83,6 +84,24 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->order->refresh();
 
         session()->flash('status', __('Order status updated.'));
+    }
+
+    /**
+     * Same reasoning as orders/show.blade.php's onOrderStatusUpdated():
+     * only react when the event names the order currently open here,
+     * and only ever re-query the database - never trust the payload as
+     * data. This does not grant kitchen any new capability; nextStatus()
+     * and the existing canTransitionAsKitchen policy check still govern
+     * what the (freshly reloaded) order actually allows next.
+     */
+    #[On('echo-private:restaurants.{order.restaurant_id}.orders,.order.status-updated')]
+    public function onOrderStatusUpdated(array $event): void
+    {
+        if ((int) ($event['id'] ?? 0) !== $this->order->id) {
+            return;
+        }
+
+        $this->order->refresh();
     }
 }; ?>
 
