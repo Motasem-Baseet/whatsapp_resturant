@@ -3,6 +3,7 @@
 namespace App\Services\Dashboard;
 
 use App\Enums\OrderStatus;
+use App\Models\Order;
 use App\Models\Restaurant;
 use App\Models\User;
 
@@ -32,6 +33,7 @@ class GetDashboardMetrics
      *     todays_new_customers: int,
      *     unread_conversations: int,
      *     unread_conversation_ids: list<int>,
+     *     attention_orders_count: int,
      *     recent_orders: \Illuminate\Support\Collection,
      *     recent_conversations: \Illuminate\Support\Collection,
      * }
@@ -93,6 +95,18 @@ class GetDashboardMetrics
             'unread_conversations' => count($unreadConversationIds),
             'unread_conversation_ids' => $unreadConversationIds,
 
+            // Bounded to the restaurant's currently-active orders only
+            // (never all-time history), then classified in PHP via
+            // Order::requiresAttention() - the same authoritative method
+            // the order list and detail pages use - so this count can
+            // never drift from what those pages actually show.
+            'attention_orders_count' => $restaurant->orders()
+                ->whereIn('status', Order::attentionEligibleStatusValues())
+                ->with('statusHistory')
+                ->get()
+                ->filter(fn (Order $order) => $order->requiresAttention())
+                ->count(),
+
             'recent_orders' => $restaurant->orders()
                 ->with('customer')
                 ->orderByDesc('created_at')
@@ -113,6 +127,7 @@ class GetDashboardMetrics
      *     confirmed_count: int,
      *     preparing_count: int,
      *     ready_count: int,
+     *     attention_orders_count: int,
      *     recent_orders: \Illuminate\Support\Collection,
      * }
      */
@@ -129,6 +144,17 @@ class GetDashboardMetrics
 
             'ready_count' => $restaurant->orders()
                 ->where('status', OrderStatus::Ready->value)
+                ->count(),
+
+            // Confirmed/preparing only - never ready, matching the
+            // kitchen order list's own treatment (kitchen has no action
+            // available on a ready order, so it is never surfaced to
+            // kitchen as something needing kitchen attention).
+            'attention_orders_count' => $restaurant->orders()
+                ->whereIn('status', [OrderStatus::Confirmed->value, OrderStatus::Preparing->value])
+                ->with('statusHistory')
+                ->get()
+                ->filter(fn (Order $order) => $order->requiresAttention())
                 ->count(),
 
             // Same kitchen-relevant status set as

@@ -20,8 +20,11 @@ new #[Layout('components.layouts.app')] class extends Component {
         // Historical product_name/quantity snapshots come straight off
         // OrderItem - never from the live Product record - so this page
         // reflects what was actually ordered even if a product has
-        // since changed or been removed.
-        $this->order = $order->load(['customer', 'conversation', 'items']);
+        // since changed or been removed. statusHistory is eager-loaded
+        // (no changedBy - this page shows no timeline, unlike
+        // orders/show.blade.php) so Order::currentStatusStartedAt()/
+        // requiresAttention() don't each issue their own query.
+        $this->order = $order->load(['customer', 'conversation', 'items', 'statusHistory']);
     }
 
     /**
@@ -132,9 +135,22 @@ new #[Layout('components.layouts.app')] class extends Component {
 
         <div class="rounded-xl border border-neutral-200 p-4 dark:border-neutral-700">
             <flux:subheading>{{ __('Status') }}</flux:subheading>
-            <div class="mt-1">
+            <div class="mt-1 flex items-center gap-2">
                 <flux:badge>{{ $order->status->label() }}</flux:badge>
+                {{-- Ready is deliberately excluded, matching the kitchen
+                     order list: kitchen has no action available on a
+                     ready order, so it is never told that one "needs
+                     attention". --}}
+                @if ($order->status !== OrderStatus::Ready && $order->requiresAttention())
+                    <flux:badge color="red" size="sm">{{ __('Needs attention') }}</flux:badge>
+                @endif
             </div>
+            <p class="mt-1 text-sm text-zinc-500">
+                {{ __('In this status for :duration', ['duration' => $order->currentStatusStartedAt()->diffForHumans(null, true)]) }}
+            </p>
+            @if ($order->status !== OrderStatus::Ready && $order->attentionMessage())
+                <p class="mt-1 text-sm text-red-600">{{ __($order->attentionMessage()) }}</p>
+            @endif
 
             @if ($this->nextStatus())
                 <div class="mt-3">

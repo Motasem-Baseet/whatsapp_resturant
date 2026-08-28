@@ -83,6 +83,12 @@ new #[Layout('components.layouts.app')] class extends Component {
                 <p class="mt-1 text-2xl font-semibold">{{ $this->metrics['active_kitchen_orders'] }}</p>
             </div>
             <div class="rounded-xl border border-neutral-200 p-4 dark:border-neutral-700">
+                <flux:subheading>{{ __('Orders needing attention') }}</flux:subheading>
+                <p class="mt-1 text-2xl font-semibold {{ $this->metrics['attention_orders_count'] > 0 ? 'text-red-600' : '' }}">
+                    {{ $this->metrics['attention_orders_count'] }}
+                </p>
+            </div>
+            <div class="rounded-xl border border-neutral-200 p-4 dark:border-neutral-700">
                 <flux:subheading>{{ __("Today's new customers") }}</flux:subheading>
                 <p class="mt-1 text-2xl font-semibold">{{ $this->metrics['todays_new_customers'] }}</p>
             </div>
@@ -168,6 +174,13 @@ new #[Layout('components.layouts.app')] class extends Component {
                 <flux:subheading>{{ __('Ready') }}</flux:subheading>
                 <p class="mt-1 text-2xl font-semibold">{{ $this->metrics['ready_count'] }}</p>
             </div>
+        </div>
+
+        <div class="mt-6 rounded-xl border border-neutral-200 p-4 dark:border-neutral-700">
+            <flux:subheading>{{ __('Needing attention') }}</flux:subheading>
+            <p class="mt-1 text-2xl font-semibold {{ $this->metrics['attention_orders_count'] > 0 ? 'text-red-600' : '' }}">
+                {{ $this->metrics['attention_orders_count'] }}
+            </p>
         </div>
 
         <div class="mt-6 rounded-xl border border-neutral-200 p-4 dark:border-neutral-700">

@@ -17,7 +17,15 @@ new #[Layout('components.layouts.app')] class extends Component {
     {
         $this->authorize('view', $order);
 
-        $this->order = $order->load(['customer', 'conversation', 'createdBy', 'items']);
+        // statusHistory.changedBy is eager-loaded once here (rather than
+        // statusHistory() below issuing its own query) so it doubles as
+        // the source for both the timeline display and
+        // Order::currentStatusStartedAt()/requiresAttention()/
+        // attentionReason() - see those methods' docblocks. refresh()
+        // (used by transitionTo()/onOrderStatusUpdated() below) reloads
+        // whatever relations are already loaded, so this stays correct
+        // after both a transition and a real-time update.
+        $this->order = $order->load(['customer', 'conversation', 'createdBy', 'items', 'statusHistory.changedBy']);
     }
 
     /**
@@ -44,21 +52,21 @@ new #[Layout('components.layouts.app')] class extends Component {
     }
 
     /**
-     * Recomputed on every render (rather than loaded once in mount())
-     * so it stays current after transitionTo() records a new row,
-     * without needing a separate manual reload. Ordered oldest-first so
-     * the timeline reads top-to-bottom in the order events actually
-     * happened; created_at is the primary sort with id as a tiebreaker
-     * for transitions recorded within the same second.
+     * Reads from the statusHistory.changedBy relation eager-loaded in
+     * mount() (and reloaded by refresh() after a transition or a
+     * matching real-time event) rather than issuing a second query -
+     * the same collection Order::currentStatusStartedAt() uses.
+     * Ordered oldest-first so the timeline reads top-to-bottom in the
+     * order events actually happened; created_at is the primary sort
+     * with id as a tiebreaker for transitions recorded within the same
+     * second.
      */
     #[Computed]
     public function statusHistory()
     {
-        return $this->order->statusHistory()
-            ->with('changedBy')
-            ->orderBy('created_at')
-            ->orderBy('id')
-            ->get();
+        return $this->order->statusHistory
+            ->sortBy([['created_at', 'asc'], ['id', 'asc']])
+            ->values();
     }
 
     /**
@@ -115,9 +123,18 @@ new #[Layout('components.layouts.app')] class extends Component {
 
         <div class="rounded-xl border border-neutral-200 p-4 dark:border-neutral-700">
             <flux:subheading>{{ __('Status') }}</flux:subheading>
-            <div class="mt-1">
+            <div class="mt-1 flex items-center gap-2">
                 <flux:badge>{{ $order->status->label() }}</flux:badge>
+                @if ($order->requiresAttention())
+                    <flux:badge color="red" size="sm">{{ __('Needs attention') }}</flux:badge>
+                @endif
             </div>
+            <p class="mt-1 text-sm text-zinc-500">
+                {{ __('In this status for :duration', ['duration' => $order->currentStatusStartedAt()->diffForHumans(null, true)]) }}
+            </p>
+            @if ($order->attentionMessage())
+                <p class="mt-1 text-sm text-red-600">{{ __($order->attentionMessage()) }}</p>
+            @endif
 
             @if (! empty($order->status->allowedTransitions()))
                 <div class="mt-3 flex flex-wrap gap-2">

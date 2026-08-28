@@ -38,7 +38,7 @@ new #[Layout('components.layouts.app')] class extends Component {
 
         return Auth::user()->restaurant
             ->orders()
-            ->with(['customer', 'items', 'conversation'])
+            ->with(['customer', 'items', 'conversation', 'statusHistory'])
             ->whereIn('status', [
                 OrderStatus::Confirmed->value,
                 OrderStatus::Preparing->value,
@@ -87,6 +87,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             <flux:table.column>{{ __('Order') }}</flux:table.column>
             <flux:table.column>{{ __('Customer') }}</flux:table.column>
             <flux:table.column>{{ __('Status') }}</flux:table.column>
+            <flux:table.column>{{ __('Attention') }}</flux:table.column>
             <flux:table.column>{{ __('Items') }}</flux:table.column>
             <flux:table.column>{{ __('Total') }}</flux:table.column>
             <flux:table.column>{{ __('Conversation') }}</flux:table.column>
@@ -102,6 +103,18 @@ new #[Layout('components.layouts.app')] class extends Component {
                     <flux:table.cell>
                         <flux:badge size="sm">{{ $order->status->label() }}</flux:badge>
                     </flux:table.cell>
+                    <flux:table.cell>
+                        {{-- Ready is excluded here even though
+                             requiresAttention() is true for it - kitchen
+                             has no action available on a ready order
+                             (only owner/cashier can complete it), so
+                             surfacing it as needing kitchen attention
+                             would be pointing at something kitchen can't
+                             act on. --}}
+                        @if ($order->status !== OrderStatus::Ready && $order->requiresAttention())
+                            <flux:badge size="sm" color="red">{{ __('Needs attention') }}</flux:badge>
+                        @endif
+                    </flux:table.cell>
                     <flux:table.cell>{{ __(':count items', ['count' => $order->items->count()]) }}</flux:table.cell>
                     <flux:table.cell>{{ number_format($order->total, 2) }}</flux:table.cell>
                     <flux:table.cell>{{ $order->conversation ? __('Yes') : __('—') }}</flux:table.cell>
@@ -114,7 +127,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 </flux:table.row>
             @empty
                 <flux:table.row>
-                    <flux:table.cell colspan="8" class="text-center text-zinc-500">
+                    <flux:table.cell colspan="9" class="text-center text-zinc-500">
                         {{ __('No active orders right now.') }}
                     </flux:table.cell>
                 </flux:table.row>
