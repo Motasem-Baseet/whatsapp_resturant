@@ -54,4 +54,20 @@ class Restaurant extends Model
     {
         return $this->hasMany(Customer::class);
     }
+
+    /**
+     * The conversations that belong to this restaurant.
+     */
+    public function conversations(): HasMany
+    {
+        return $this->hasMany(Conversation::class);
+    }
+
+    /**
+     * The messages that belong to this restaurant.
+     */
+    public function messages(): HasMany
+    {
+        return $this->hasMany(Message::class);
+    }
 }

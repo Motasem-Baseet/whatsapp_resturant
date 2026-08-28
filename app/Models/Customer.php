@@ -6,6 +6,7 @@ use App\Models\Concerns\BelongsToRestaurant;
 use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Customer extends Model
 {
@@ -35,5 +36,13 @@ class Customer extends Model
         return Attribute::make(
             set: fn (string $value) => trim($value),
         );
+    }
+
+    /**
+     * The conversations with this customer.
+     */
+    public function conversations(): HasMany
+    {
+        return $this->hasMany(Conversation::class);
     }
 }
