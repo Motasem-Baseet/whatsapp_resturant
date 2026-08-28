@@ -19,6 +19,13 @@
                         <flux:navlist.item icon="user-group" :href="route('employees.index')" :current="request()->routeIs('employees.*')" wire:navigate>Employees</flux:navlist.item>
                     @endcan
                 </flux:navlist.group>
+
+                @can('viewAny', App\Models\Category::class)
+                    <flux:navlist.group heading="Menu" class="grid">
+                        <flux:navlist.item icon="tag" :href="route('menu.categories.index')" :current="request()->routeIs('menu.categories.*')" wire:navigate>Categories</flux:navlist.item>
+                        <flux:navlist.item icon="shopping-bag" :href="route('menu.products.index')" :current="request()->routeIs('menu.products.*')" wire:navigate>Products</flux:navlist.item>
+                    </flux:navlist.group>
+                @endcan
             </flux:navlist>
 
             <flux:spacer />

@@ -30,4 +30,20 @@ class Restaurant extends Model
     {
         return $this->hasMany(User::class);
     }
+
+    /**
+     * The menu categories that belong to this restaurant.
+     */
+    public function categories(): HasMany
+    {
+        return $this->hasMany(Category::class);
+    }
+
+    /**
+     * The menu products that belong to this restaurant.
+     */
+    public function products(): HasMany
+    {
+        return $this->hasMany(Product::class);
+    }
 }
