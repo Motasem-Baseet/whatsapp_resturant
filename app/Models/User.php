@@ -5,6 +5,7 @@ namespace App\Models;
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Illuminate\Support\Str;
@@ -83,5 +84,24 @@ class User extends Authenticatable // implements MustVerifyEmail
     public function restaurant(): BelongsTo
     {
         return $this->belongsTo(Restaurant::class);
+    }
+
+    /**
+     * The orders this user created (Order::createdBy()'s inverse) - used
+     * by the staff activity summary on the employee edit page.
+     */
+    public function createdOrders(): HasMany
+    {
+        return $this->hasMany(Order::class, 'created_by');
+    }
+
+    /**
+     * The conversations assigned to this user
+     * (Conversation::assignedUser()'s inverse) - used by the staff
+     * activity summary on the employee edit page.
+     */
+    public function assignedConversations(): HasMany
+    {
+        return $this->hasMany(Conversation::class, 'assigned_user_id');
     }
 }
