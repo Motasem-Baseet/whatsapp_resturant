@@ -3,6 +3,7 @@
 use App\Enums\ConversationStatus;
 use App\Models\Order;
 use App\Services\Dashboard\GetDashboardMetrics;
+use App\Services\Onboarding\GetOnboardingProgress;
 use Illuminate\Support\Facades\Auth;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Layout;
@@ -57,6 +58,26 @@ new #[Layout('components.layouts.app')] class extends Component {
 
         return null;
     }
+
+    /**
+     * Null for anyone but an owner whose own restaurant has not yet
+     * completed onboarding - this is deliberately a separate, isolated
+     * computed property rather than folded into metrics() above, so
+     * the setup reminder can never interfere with (or be mistaken for)
+     * an actual financial/operational metric. Cashier and kitchen never
+     * see this, matching onboarding's owner-only access rule elsewhere.
+     */
+    #[Computed]
+    public function onboardingProgress(): ?array
+    {
+        $user = Auth::user();
+
+        if (! $user->hasRole('owner') || ! $user->restaurant || $user->restaurant->onboarding_completed_at !== null) {
+            return null;
+        }
+
+        return app(GetOnboardingProgress::class)->handle($user->restaurant);
+    }
 }; ?>
 
 <section class="w-full">
@@ -64,6 +85,22 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     @if ($this->isOperationalUser && $this->metrics)
         <flux:subheading>{{ __('Today for :restaurant', ['restaurant' => Auth::user()->restaurant->name]) }}</flux:subheading>
+
+        @if ($this->onboardingProgress)
+            <div class="mt-4 rounded-xl border border-amber-300 bg-amber-50 p-4 dark:border-amber-700 dark:bg-amber-900/20">
+                <div class="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                        <p class="font-medium">{{ __('Finish setting up your restaurant') }}</p>
+                        <p class="text-sm text-zinc-600 dark:text-zinc-400">
+                            {{ __(':completed of :total steps complete', ['completed' => $this->onboardingProgress['completed_steps'], 'total' => $this->onboardingProgress['total_steps']]) }}
+                        </p>
+                    </div>
+                    <flux:button :href="route('onboarding.show')" size="sm" variant="primary" wire:navigate>
+                        {{ __('Continue setup') }}
+                    </flux:button>
+                </div>
+            </div>
+        @endif
 
         <div class="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             <div class="rounded-xl border border-neutral-200 p-4 dark:border-neutral-700">

@@ -126,6 +126,12 @@ new #[Layout('components.layouts.app')] class extends Component {
     @include('partials.settings-heading')
 
     <x-settings.layout heading="WhatsApp" subheading="Configure the WhatsApp Cloud API account used by your restaurant's inbox">
+        @if (Auth::user()->restaurant?->onboarding_completed_at === null)
+            <flux:button :href="route('onboarding.show')" size="sm" variant="ghost" wire:navigate class="mb-4">
+                {{ __('← Back to setup') }}
+            </flux:button>
+        @endif
+
         @if (session('status'))
             <p class="mb-4 text-sm font-medium text-green-600">{{ session('status') }}</p>
         @endif

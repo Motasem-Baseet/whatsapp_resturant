@@ -66,7 +66,13 @@ class RegistrationTest extends TestCase
         // A subsequent request, going through the normal IdentifyTenant
         // middleware, must resolve the tenant from the authenticated
         // user - not from anything set during registration itself.
-        $this->get('/dashboard')->assertStatus(200);
+        //
+        // Phase 26: a brand new restaurant has not completed onboarding,
+        // so /dashboard itself redirects to onboarding rather than
+        // rendering - but IdentifyTenant (global middleware) runs before
+        // that route-level redirect, so this is still the right place to
+        // prove tenant resolution works immediately after registration.
+        $this->get('/dashboard')->assertRedirect(route('onboarding.show'));
 
         $this->assertSame($restaurant->id, app(TenantContext::class)->id());
     }

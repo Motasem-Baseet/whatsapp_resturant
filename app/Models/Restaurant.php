@@ -14,6 +14,12 @@ class Restaurant extends Model
     /**
      * The attributes that are mass assignable.
      *
+     * onboarding_completed_at is deliberately excluded (Phase 26) - it
+     * is never client-settable, and is only ever written by
+     * onboarding.show's complete() action after independently
+     * re-verifying every requirement server-side via
+     * GetOnboardingProgress.
+     *
      * @var list<string>
      */
     protected $fillable = [
@@ -22,6 +28,18 @@ class Restaurant extends Model
         'address',
         'logo_path',
     ];
+
+    /**
+     * Get the attributes that should be cast.
+     *
+     * @return array<string, string>
+     */
+    protected function casts(): array
+    {
+        return [
+            'onboarding_completed_at' => 'datetime',
+        ];
+    }
 
     /**
      * The users that belong to this restaurant.

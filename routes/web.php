@@ -8,7 +8,7 @@ Route::get('/', function () {
 })->name('home');
 
 Volt::route('dashboard', 'dashboard')
-    ->middleware(['auth', 'verified'])
+    ->middleware(['auth', 'verified', 'onboarding.incomplete'])
     ->name('dashboard');
 
 Route::middleware(['auth'])->group(function () {
@@ -22,6 +22,7 @@ Route::middleware(['auth'])->group(function () {
 Route::middleware(['auth', 'verified', 'role:owner'])->group(function () {
     Volt::route('settings/whatsapp', 'settings.whatsapp')->name('settings.whatsapp');
     Volt::route('settings/restaurant', 'settings.restaurant')->name('settings.restaurant');
+    Volt::route('onboarding', 'onboarding.show')->name('onboarding.show');
 });
 
 Route::middleware(['auth', 'verified', 'role:owner'])->prefix('employees')->name('employees.')->group(function () {

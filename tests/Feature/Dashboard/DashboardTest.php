@@ -24,6 +24,18 @@ class DashboardTest extends TestCase
     {
         $restaurant ??= Restaurant::factory()->create();
 
+        // Phase 26: the dashboard route redirects an owner whose
+        // restaurant has not completed onboarding to the onboarding
+        // flow instead. This file is about dashboard metrics, not
+        // onboarding gating (see tests/Feature/Onboarding/
+        // OnboardingTest.php for that), so onboarding is marked
+        // complete here to keep every existing assertion below
+        // exercising the actual dashboard rather than a redirect.
+        if ($restaurant->onboarding_completed_at === null) {
+            $restaurant->onboarding_completed_at = now();
+            $restaurant->save();
+        }
+
         $owner = User::factory()->create(['restaurant_id' => $restaurant->id]);
         $owner->assignRole(Role::findOrCreate('owner'));
 

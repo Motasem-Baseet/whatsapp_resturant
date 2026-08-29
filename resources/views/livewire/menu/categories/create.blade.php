@@ -40,6 +40,12 @@ new #[Layout('components.layouts.app')] class extends Component {
 }; ?>
 
 <section class="w-full">
+    @if (Auth::user()->restaurant?->onboarding_completed_at === null)
+        <flux:button :href="route('onboarding.show')" size="sm" variant="ghost" wire:navigate>
+            {{ __('← Back to setup') }}
+        </flux:button>
+    @endif
+
     <flux:heading size="xl">{{ __('Add category') }}</flux:heading>
     <flux:subheading>{{ __('Create a new menu category for your restaurant.') }}</flux:subheading>
 

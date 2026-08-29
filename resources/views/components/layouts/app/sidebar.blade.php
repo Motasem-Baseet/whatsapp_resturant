@@ -15,6 +15,17 @@
                 <flux:navlist.group heading="Platform" class="grid">
                     <flux:navlist.item icon="home" :href="route('dashboard')" :current="request()->routeIs('dashboard')" wire:navigate>Dashboard</flux:navlist.item>
 
+                    @php
+                        $onboardingRestaurant = auth()->user()->hasRole('owner') ? auth()->user()->restaurant : null;
+                        $onboardingIncomplete = $onboardingRestaurant && $onboardingRestaurant->onboarding_completed_at === null;
+                    @endphp
+                    @if ($onboardingIncomplete)
+                        @php $onboardingProgress = app(App\Services\Onboarding\GetOnboardingProgress::class)->handle($onboardingRestaurant); @endphp
+                        <flux:navlist.item icon="rocket-launch" :href="route('onboarding.show')" :current="request()->routeIs('onboarding.*')" wire:navigate>
+                            {{ __('Complete Setup') }} ({{ $onboardingProgress['completed_steps'] }}/{{ $onboardingProgress['total_steps'] }})
+                        </flux:navlist.item>
+                    @endif
+
                     @can('viewAny', App\Models\Conversation::class)
                         <livewire:inbox.unread-badge />
                     @endcan
