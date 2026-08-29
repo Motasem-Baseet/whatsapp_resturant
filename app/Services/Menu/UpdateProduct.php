@@ -13,7 +13,12 @@ use App\Models\Product;
 class UpdateProduct
 {
     /**
-     * @param  array{category_id: int, name: string, description: ?string, price: string|float, is_active: bool}  $data
+     * Accepts either a full edit-form payload or a partial update (e.g.
+     * the product list's quick availability toggle passes only
+     * ['is_available' => bool]) - Eloquent's update() only touches the
+     * keys actually given.
+     *
+     * @param  array{category_id?: int, name?: string, description?: ?string, price?: string|float, is_active?: bool, is_available?: bool, stock_quantity?: ?int}  $data
      */
     public function handle(Product $product, array $data): Product
     {

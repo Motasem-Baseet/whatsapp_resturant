@@ -65,7 +65,7 @@ class CreateOrder
         }
 
         return DB::transaction(function () use ($restaurant, $customer, $conversation, $createdBy, $notes, $normalizedItems) {
-            $products = $this->resolveOrderableProducts($restaurant, array_keys($normalizedItems));
+            $products = $this->resolveOrderableProducts($restaurant, $normalizedItems);
 
             $order = new Order([
                 'status' => OrderStatus::Pending,
@@ -92,16 +92,34 @@ class CreateOrder
                 $lineTotalCents = $unitPriceCents * $quantity;
                 $subtotalCents += $lineTotalCents;
 
+                // null stock_quantity means this product is not
+                // stock-tracked (Phase 27) - nothing is deducted, and
+                // stock_deducted is recorded false so a later
+                // cancellation of this order correctly restores
+                // nothing for this line, regardless of whether the
+                // product becomes stock-tracked afterwards.
+                $stockTracked = $product->stock_quantity !== null;
+
                 $item = new OrderItem([
                     'product_id' => $product->id,
                     'product_name' => $product->name,
                     'unit_price' => $this->centsToDecimalString($unitPriceCents),
                     'quantity' => $quantity,
                     'line_total' => $this->centsToDecimalString($lineTotalCents),
+                    'stock_deducted' => $stockTracked,
                 ]);
                 $item->restaurant_id = $restaurant->id;
                 $item->order_id = $order->id;
                 $item->save();
+
+                if ($stockTracked) {
+                    // A single atomic UPDATE ... SET stock_quantity =
+                    // stock_quantity - ?, not a read-then-write in PHP -
+                    // combined with the row lock already taken in
+                    // resolveOrderableProducts() above, this is safe
+                    // against concurrent orders for the same product.
+                    $product->decrement('stock_quantity', $quantity);
+                }
             }
 
             $subtotal = $this->centsToDecimalString($subtotalCents);
@@ -141,20 +159,53 @@ class CreateOrder
     }
 
     /**
-     * @param  list<int>  $productIds
+     * Resolves and validates every product in the order, row-locked for
+     * the remainder of this transaction (Phase 27) - the lock is taken
+     * here, before any stock is checked or decremented below, so two
+     * concurrent orders for the same product can never both read the
+     * same pre-decrement stock value and both decide there is enough:
+     * the second transaction blocks on this SELECT until the first
+     * commits (or rolls back), at which point it re-reads the
+     * now-current stock. This is the standard "SELECT ... FOR UPDATE"
+     * pessimistic-locking pattern, not a read-then-write race.
+     *
+     * @param  array<int, int>  $normalizedItems  product_id => quantity
      * @return \Illuminate\Support\Collection<int, \App\Models\Product>
+     *
+     * @throws InvalidArgumentException if any product does not exist,
+     *         does not belong to $restaurant, is not currently
+     *         orderable (Product::isOrderable()), or does not have
+     *         enough stock for the requested quantity.
      */
-    protected function resolveOrderableProducts(Restaurant $restaurant, array $productIds): \Illuminate\Support\Collection
+    protected function resolveOrderableProducts(Restaurant $restaurant, array $normalizedItems): \Illuminate\Support\Collection
     {
+        $productIds = array_keys($normalizedItems);
+
         $products = $restaurant->products()
             ->whereIn('id', $productIds)
-            ->where('is_active', true)
-            ->whereHas('category', fn ($query) => $query->where('is_active', true))
+            ->with('category')
+            ->lockForUpdate()
             ->get()
             ->keyBy('id');
 
         if ($products->count() !== count($productIds)) {
-            throw new InvalidArgumentException('One or more products are invalid, inactive, in an inactive category, or belong to another restaurant.');
+            throw new InvalidArgumentException('One or more products are invalid, unavailable, or belong to another restaurant.');
+        }
+
+        foreach ($normalizedItems as $productId => $quantity) {
+            $product = $products[$productId];
+
+            if (! $product->isOrderable()) {
+                throw new InvalidArgumentException('One or more products are invalid, unavailable, or belong to another restaurant.');
+            }
+
+            // Checked against the already-merged (duplicate-normalized)
+            // quantity - never per submitted line - so two lines for
+            // the same product can never together oversell stock that
+            // would have correctly rejected their combined total.
+            if ($product->stock_quantity !== null && $product->stock_quantity < $quantity) {
+                throw new InvalidArgumentException('Insufficient stock for one or more products.');
+            }
         }
 
         return $products;

@@ -51,11 +51,18 @@ trait HasProductSelection
     }
 
     /**
-     * Only active products, in active categories, belonging to the
-     * current restaurant - the same set CreateOrder itself will
-     * independently re-validate against when the order is actually
-     * created (see CreateOrder::resolveOrderableProducts()) - narrowed
-     * further by the search term and/or category filter, both optional.
+     * Only currently orderable products (Phase 27: active, available,
+     * in an active category, and in stock or untracked - see
+     * Product::isOrderable(), the single source of truth this and
+     * CreateOrder::resolveOrderableProducts() both defer to), belonging
+     * to the current restaurant - narrowed further by the search term
+     * and/or category filter, both optional.
+     *
+     * Filtered in PHP via isOrderable() rather than re-expressing the
+     * same conditions as a second, hand-written SQL predicate here -
+     * for a single restaurant's own menu this stays a small dataset,
+     * and it guarantees this list can never drift from what CreateOrder
+     * will itself accept.
      *
      * The category filter never trusts category_id directly: an
      * unrecognized or foreign id is treated as "no category selected"
@@ -73,12 +80,13 @@ trait HasProductSelection
 
         return Auth::user()->restaurant
             ->products()
-            ->where('is_active', true)
-            ->whereHas('category', fn ($query) => $query->where('is_active', true))
+            ->with('category')
             ->when($this->product_search !== '', fn ($query) => $query->where('name', 'like', '%'.$this->product_search.'%'))
             ->when($categoryId !== null, fn ($query) => $query->where('category_id', $categoryId))
             ->orderBy('name')
-            ->get();
+            ->get()
+            ->filter(fn ($product) => $product->isOrderable())
+            ->values();
     }
 
     protected function validSelectedCategoryId(): ?int

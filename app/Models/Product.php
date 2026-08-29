@@ -31,6 +31,24 @@ class Product extends Model
         'description',
         'price',
         'is_active',
+        'is_available',
+        'stock_quantity',
+    ];
+
+    /**
+     * Default attribute values for new, in-memory instances.
+     *
+     * is_available mirrors the database column's own default (true), so
+     * a freshly created model already reflects it in PHP without
+     * needing a round-trip refresh from the database - the same gap
+     * fixed for User::$is_active in Phase 3. stock_quantity needs no
+     * entry here: its "unset" PHP value is already null, matching the
+     * column's own nullable default.
+     *
+     * @var array<string, mixed>
+     */
+    protected $attributes = [
+        'is_available' => true,
     ];
 
     /**
@@ -43,11 +61,35 @@ class Product extends Model
         return [
             'price' => 'decimal:2',
             'is_active' => 'boolean',
+            'is_available' => 'boolean',
+            'stock_quantity' => 'integer',
         ];
     }
 
     public function category(): BelongsTo
     {
         return $this->belongsTo(Category::class);
+    }
+
+    /**
+     * Whether this product can currently be added to a new order
+     * (Phase 27) - the single source of truth used by both the product
+     * selector (App\Livewire\Concerns\HasProductSelection) and
+     * CreateOrder's own server-side re-validation, so the two can never
+     * disagree.
+     *
+     * is_active (generally enabled in the system) and is_available
+     * (currently orderable, independent of is_active) are deliberately
+     * separate conditions - a product can be temporarily marked
+     * unavailable without deactivating it. stock_quantity of null means
+     * "not stock-tracked", which is never treated as zero stock - a
+     * non-null value must be strictly greater than zero.
+     */
+    public function isOrderable(): bool
+    {
+        return $this->is_active
+            && $this->is_available
+            && $this->category?->is_active === true
+            && ($this->stock_quantity === null || $this->stock_quantity > 0);
     }
 }

@@ -22,7 +22,7 @@ use App\Models\Restaurant;
 class CreateProduct
 {
     /**
-     * @param  array{category_id: int, name: string, description: ?string, price: string|float, is_active?: bool}  $data
+     * @param  array{category_id: int, name: string, description: ?string, price: string|float, is_active?: bool, is_available?: bool, stock_quantity?: ?int}  $data
      */
     public function handle(Restaurant $restaurant, array $data): Product
     {

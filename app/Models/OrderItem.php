@@ -17,10 +17,11 @@ class OrderItem extends Model
      *
      * restaurant_id is deliberately excluded - it is always assigned
      * explicitly by CreateOrder from the owning order, never from
-     * input. product_name, unit_price, and line_total are snapshots
-     * computed server-side by CreateOrder - never accepted from the
-     * client - but remain fillable since they are legitimate,
-     * server-derived values passed internally, not raw request input.
+     * input. product_name, unit_price, line_total, and stock_deducted
+     * are snapshots/facts computed server-side by CreateOrder - never
+     * accepted from the client - but remain fillable since they are
+     * legitimate, server-derived values passed internally, not raw
+     * request input.
      *
      * @var list<string>
      */
@@ -30,6 +31,7 @@ class OrderItem extends Model
         'unit_price',
         'quantity',
         'line_total',
+        'stock_deducted',
     ];
 
     /**
@@ -43,6 +45,7 @@ class OrderItem extends Model
             'unit_price' => 'decimal:2',
             'quantity' => 'integer',
             'line_total' => 'decimal:2',
+            'stock_deducted' => 'boolean',
         ];
     }
 
