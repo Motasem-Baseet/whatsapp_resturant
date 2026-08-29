@@ -56,16 +56,20 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     /**
      * Owner and cashier users are eligible for assignment; kitchen is
-     * not. Uses whereHas() rather than Spatie's role() scope
-     * deliberately - role() throws if a named role doesn't exist yet in
-     * the database, which would break this page on a fresh restaurant
-     * that has never had a cashier.
+     * not, and a deactivated employee is never offered for a *new*
+     * assignment (their existing assignment, if any, is left alone and
+     * still displays correctly via $conversation->assignedUser() above,
+     * which is not filtered by is_active). Uses whereHas() rather than
+     * Spatie's role() scope deliberately - role() throws if a named role
+     * doesn't exist yet in the database, which would break this page on
+     * a fresh restaurant that has never had a cashier.
      */
     #[Computed]
     public function assignableUsers()
     {
         return Auth::user()->restaurant
             ->users()
+            ->where('is_active', true)
             ->whereHas('roles', fn ($query) => $query->whereIn('name', ['owner', 'cashier']))
             ->orderBy('name')
             ->get();
@@ -73,9 +77,9 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     /**
      * Assign (or unassign) this conversation. The assignee is resolved
-     * from the current restaurant's own eligible users only - never
-     * trusted as a raw id - and AssignConversation re-validates
-     * restaurant/role eligibility itself regardless.
+     * from the current restaurant's own eligible (active, owner/cashier)
+     * users only - never trusted as a raw id - and AssignConversation
+     * re-validates restaurant/role/active eligibility itself regardless.
      */
     public function assign(): void
     {
@@ -93,11 +97,12 @@ new #[Layout('components.layouts.app')] class extends Component {
         if ($validated['assigned_user_id']) {
             $assignee = Auth::user()->restaurant
                 ->users()
+                ->where('is_active', true)
                 ->whereHas('roles', fn ($query) => $query->whereIn('name', ['owner', 'cashier']))
                 ->find($validated['assigned_user_id']);
 
             if (! $assignee) {
-                $this->addError('assigned_user_id', __('Only owner or cashier users may be assigned.'));
+                $this->addError('assigned_user_id', __('Only active owner or cashier users may be assigned.'));
 
                 return;
             }

@@ -6,9 +6,12 @@ use Illuminate\Support\Facades\Auth;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\On;
+use Livewire\WithPagination;
 use Livewire\Volt\Component;
 
 new #[Layout('components.layouts.app')] class extends Component {
+    use WithPagination;
+
     /**
      * Three independent, explicit filter dimensions rather than a pile
      * of unrelated booleans. Each is a plain string bound via
@@ -22,9 +25,41 @@ new #[Layout('components.layouts.app')] class extends Component {
     public string $readFilter = 'all';
     public string $statusFilter = 'all';
 
+    /**
+     * Customer name/phone search - same debounced, server-side,
+     * parameter-bound `like` pattern already established by
+     * customers/index.blade.php and employees/index.blade.php.
+     */
+    public string $search = '';
+
     public function mount(): void
     {
         $this->authorize('viewAny', Conversation::class);
+    }
+
+    /**
+     * Every filter/search dimension resets pagination back to page 1 -
+     * changing what the list shows while staying on a now-out-of-range
+     * page would otherwise render an empty page.
+     */
+    public function updatedSearch(): void
+    {
+        $this->resetPage();
+    }
+
+    public function updatedAssignmentFilter(): void
+    {
+        $this->resetPage();
+    }
+
+    public function updatedStatusFilter(): void
+    {
+        $this->resetPage();
+    }
+
+    public function updatedReadFilter(): void
+    {
+        $this->resetPage();
     }
 
     /**
@@ -71,6 +106,13 @@ new #[Layout('components.layouts.app')] class extends Component {
             ->conversations()
             ->with(['customer', 'assignedUser']);
 
+        if ($this->search !== '') {
+            $query->whereHas('customer', function ($query) {
+                $query->where('name', 'like', '%'.$this->search.'%')
+                    ->orWhere('phone', 'like', '%'.$this->search.'%');
+            });
+        }
+
         match ($this->validAssignmentFilter()) {
             'mine' => $query->where('assigned_user_id', $user->id),
             'unassigned' => $query->whereNull('assigned_user_id'),
@@ -91,7 +133,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         return $query
             ->orderByDesc('last_message_at')
             ->orderByDesc('created_at')
-            ->get();
+            ->paginate(15);
     }
 
     /**
@@ -139,6 +181,14 @@ new #[Layout('components.layouts.app')] class extends Component {
     </div>
 
     <div class="mt-6 flex flex-wrap items-end gap-4">
+        <flux:input
+            wire:model.live.debounce.300ms="search"
+            type="search"
+            label="{{ __('Search') }}"
+            placeholder="{{ __('Search by customer name or phone...') }}"
+            class="max-w-sm"
+        />
+
         <flux:select wire:model.live="assignmentFilter" label="{{ __('Assignment') }}" class="max-w-xs">
             <flux:select.option value="all">{{ __('All') }}</flux:select.option>
             <flux:select.option value="mine">{{ __('Mine') }}</flux:select.option>
@@ -203,4 +253,8 @@ new #[Layout('components.layouts.app')] class extends Component {
             @endforelse
         </flux:table.rows>
     </flux:table>
+
+    <div class="mt-4">
+        {{ $this->conversations->links() }}
+    </div>
 </section>
