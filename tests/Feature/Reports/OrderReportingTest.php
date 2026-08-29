@@ -7,6 +7,7 @@ use App\Models\Customer;
 use App\Models\Category;
 use App\Models\Order;
 use App\Models\OrderItem;
+use App\Models\OrderStatusHistory;
 use App\Models\Product;
 use App\Models\Restaurant;
 use App\Models\User;
@@ -68,6 +69,29 @@ class OrderReportingTest extends TestCase
         }
 
         return $order;
+    }
+
+    /**
+     * created_at is not mass-assignable on OrderStatusHistory (matching
+     * every other model's own convention here), so it's set directly and
+     * saved - the same pattern createOrder() uses above.
+     */
+    private function createStatusHistory(
+        Order $order,
+        OrderStatus $from,
+        OrderStatus $to,
+        Carbon $createdAt,
+    ): OrderStatusHistory {
+        $history = OrderStatusHistory::factory()->create([
+            'restaurant_id' => $order->restaurant_id,
+            'order_id' => $order->id,
+            'from_status' => $from->value,
+            'to_status' => $to->value,
+        ]);
+        $history->created_at = $createdAt;
+        $history->save();
+
+        return $history;
     }
 
     // --- A. Authorization ----------------------------------------------------
@@ -615,5 +639,542 @@ class OrderReportingTest extends TestCase
         // top products, one top customers, one new customers) - never
         // one per order/product/customer.
         $this->assertLessThanOrEqual(15, $queryCount);
+    }
+
+    // --- K. Period comparison (Phase 24) ---------------------------------------
+
+    public function test_the_previous_period_for_a_seven_day_range_is_the_preceding_seven_days(): void
+    {
+        $restaurant = Restaurant::factory()->create();
+
+        $report = app(GetOrderReport::class)->handle(
+            $restaurant,
+            Carbon::parse('2026-06-09')->startOfDay(),
+            Carbon::parse('2026-06-15')->endOfDay(),
+        );
+
+        $previous = $report['comparison']['previous_period'];
+        $this->assertSame('2026-06-02', $previous['start']->format('Y-m-d'));
+        $this->assertSame('2026-06-08', $previous['end']->format('Y-m-d'));
+    }
+
+    public function test_the_previous_period_for_a_custom_range_is_the_immediately_preceding_equal_length_range(): void
+    {
+        $restaurant = Restaurant::factory()->create();
+
+        $report = app(GetOrderReport::class)->handle(
+            $restaurant,
+            Carbon::parse('2026-03-10')->startOfDay(),
+            Carbon::parse('2026-03-19')->endOfDay(),
+        );
+
+        $previous = $report['comparison']['previous_period'];
+        $this->assertSame('2026-02-28', $previous['start']->format('Y-m-d'));
+        $this->assertSame('2026-03-09', $previous['end']->format('Y-m-d'));
+    }
+
+    public function test_comparison_metrics_reflect_current_and_previous_values_with_correct_percentage_increase(): void
+    {
+        $restaurant = Restaurant::factory()->create();
+        // Current: 2026-08-08..2026-08-14. Previous: 2026-08-01..2026-08-07.
+        $current = Carbon::parse('2026-08-10');
+        $previous = Carbon::parse('2026-08-03');
+
+        $this->createOrder($restaurant, OrderStatus::Completed, '60.00', $current);
+        $this->createOrder($restaurant, OrderStatus::Completed, '40.00', $current);
+        Customer::factory()->create(['restaurant_id' => $restaurant->id, 'created_at' => $current]);
+
+        $this->createOrder($restaurant, OrderStatus::Completed, '40.00', $previous);
+        Customer::factory()->create(['restaurant_id' => $restaurant->id, 'created_at' => $previous]);
+
+        $metrics = app(GetOrderReport::class)->handle(
+            $restaurant,
+            Carbon::parse('2026-08-08')->startOfDay(),
+            Carbon::parse('2026-08-14')->endOfDay(),
+        )['comparison']['metrics'];
+
+        $this->assertSame(100.0, $metrics['revenue']['current']);
+        $this->assertSame(40.0, $metrics['revenue']['previous']);
+        $this->assertSame(60.0, $metrics['revenue']['change']);
+        $this->assertSame(150.0, $metrics['revenue']['percentage_change']);
+
+        $this->assertSame(2, $metrics['total_orders']['current']);
+        $this->assertSame(1, $metrics['total_orders']['previous']);
+        $this->assertSame(100.0, $metrics['total_orders']['percentage_change']);
+
+        $this->assertSame(2, $metrics['completed_orders']['current']);
+        $this->assertSame(1, $metrics['completed_orders']['previous']);
+
+        $this->assertSame(50.0, $metrics['average_order_value']['current']);
+        $this->assertSame(40.0, $metrics['average_order_value']['previous']);
+        $this->assertSame(25.0, $metrics['average_order_value']['percentage_change']);
+
+        $this->assertSame(1, $metrics['new_customers']['current']);
+        $this->assertSame(1, $metrics['new_customers']['previous']);
+        $this->assertSame(0.0, $metrics['new_customers']['percentage_change']);
+    }
+
+    public function test_comparison_percentage_change_reflects_a_decrease(): void
+    {
+        $restaurant = Restaurant::factory()->create();
+
+        $this->createOrder($restaurant, OrderStatus::Completed, '25.00', Carbon::parse('2026-09-10'));
+        $this->createOrder($restaurant, OrderStatus::Completed, '100.00', Carbon::parse('2026-09-03'));
+
+        $metrics = app(GetOrderReport::class)->handle(
+            $restaurant,
+            Carbon::parse('2026-09-08')->startOfDay(),
+            Carbon::parse('2026-09-14')->endOfDay(),
+        )['comparison']['metrics'];
+
+        $this->assertSame(-75.0, $metrics['revenue']['percentage_change']);
+        $this->assertSame(-75.0, $metrics['revenue']['change']);
+    }
+
+    public function test_comparison_percentage_change_is_null_new_when_previous_period_had_no_activity(): void
+    {
+        $restaurant = Restaurant::factory()->create();
+        $this->createOrder($restaurant, OrderStatus::Completed, '50.00', Carbon::parse('2026-09-10'));
+
+        $metrics = app(GetOrderReport::class)->handle(
+            $restaurant,
+            Carbon::parse('2026-09-08')->startOfDay(),
+            Carbon::parse('2026-09-14')->endOfDay(),
+        )['comparison']['metrics'];
+
+        $this->assertSame(50.0, $metrics['revenue']['current']);
+        $this->assertSame(0.0, $metrics['revenue']['previous']);
+        $this->assertNull($metrics['revenue']['percentage_change']);
+    }
+
+    public function test_comparison_percentage_change_is_a_truthful_zero_when_both_periods_have_no_activity(): void
+    {
+        $restaurant = Restaurant::factory()->create();
+
+        $metrics = app(GetOrderReport::class)->handle(
+            $restaurant,
+            Carbon::parse('2026-09-08')->startOfDay(),
+            Carbon::parse('2026-09-14')->endOfDay(),
+        )['comparison']['metrics'];
+
+        foreach ($metrics as $metric) {
+            $this->assertEquals(0, $metric['current']);
+            $this->assertEquals(0, $metric['previous']);
+            $this->assertEquals(0, $metric['change']);
+            // Never null here - both periods being zero is a truthful
+            // "no change" (0%), unlike previous=0/current>0 (undefined).
+            $this->assertSame(0.0, $metric['percentage_change']);
+        }
+    }
+
+    public function test_comparison_previous_period_data_never_leaks_from_another_restaurant(): void
+    {
+        $restaurantA = Restaurant::factory()->create();
+        $restaurantB = Restaurant::factory()->create();
+
+        // Falls inside restaurant A's *previous* period window.
+        $this->createOrder($restaurantB, OrderStatus::Completed, '500.00', Carbon::parse('2026-08-03'));
+
+        $metrics = app(GetOrderReport::class)->handle(
+            $restaurantA,
+            Carbon::parse('2026-08-08')->startOfDay(),
+            Carbon::parse('2026-08-14')->endOfDay(),
+        )['comparison']['metrics'];
+
+        $this->assertSame(0.0, $metrics['revenue']['previous']);
+    }
+
+    // --- L. Revenue trend & best-performing period (Phase 24) -------------------
+
+    public function test_best_period_identifies_the_highest_revenue_day(): void
+    {
+        $restaurant = Restaurant::factory()->create();
+        $start = Carbon::parse('2026-10-01')->startOfDay();
+        $end = Carbon::parse('2026-10-03')->endOfDay();
+
+        $this->createOrder($restaurant, OrderStatus::Completed, '50.00', Carbon::parse('2026-10-01'));
+        $this->createOrder($restaurant, OrderStatus::Completed, '200.00', Carbon::parse('2026-10-02'));
+        $this->createOrder($restaurant, OrderStatus::Completed, '100.00', Carbon::parse('2026-10-03'));
+
+        $best = app(GetOrderReport::class)->handle($restaurant, $start, $end)['best_period'];
+
+        $this->assertNotNull($best);
+        $this->assertSame('2026-10-02', $best['label']);
+        $this->assertSame('200.00', $best['revenue']);
+        $this->assertSame('day', $best['unit']);
+    }
+
+    public function test_best_period_is_null_when_the_period_has_no_revenue(): void
+    {
+        $restaurant = Restaurant::factory()->create();
+
+        $best = app(GetOrderReport::class)->handle(
+            $restaurant,
+            Carbon::parse('2026-10-01')->startOfDay(),
+            Carbon::parse('2026-10-03')->endOfDay(),
+        )['best_period'];
+
+        $this->assertNull($best);
+    }
+
+    public function test_best_period_is_null_when_the_only_orders_in_range_are_cancelled(): void
+    {
+        $restaurant = Restaurant::factory()->create();
+        $this->createOrder($restaurant, OrderStatus::Cancelled, '999.00', Carbon::parse('2026-10-02'));
+
+        $best = app(GetOrderReport::class)->handle(
+            $restaurant,
+            Carbon::parse('2026-10-01')->startOfDay(),
+            Carbon::parse('2026-10-03')->endOfDay(),
+        )['best_period'];
+
+        $this->assertNull($best);
+    }
+
+    public function test_best_period_is_labelled_as_a_week_not_a_day_for_a_long_range(): void
+    {
+        $restaurant = Restaurant::factory()->create();
+        $this->createOrder($restaurant, OrderStatus::Completed, '75.00', Carbon::parse('2026-03-10'));
+
+        $best = app(GetOrderReport::class)->handle(
+            $restaurant,
+            Carbon::parse('2026-01-01')->startOfDay(),
+            Carbon::parse('2026-06-01')->endOfDay(),
+        )['best_period'];
+
+        $this->assertNotNull($best);
+        $this->assertSame('week', $best['unit']);
+        $this->assertStringContainsString('–', $best['label']);
+    }
+
+    // --- M. Customer retention & repeat customers (Phase 24) --------------------
+
+    public function test_a_customer_with_a_prior_order_before_the_period_is_counted_as_returning(): void
+    {
+        $restaurant = Restaurant::factory()->create();
+        $customer = Customer::factory()->create(['restaurant_id' => $restaurant->id]);
+        $this->createOrder($restaurant, OrderStatus::Completed, '10.00', Carbon::parse('2026-06-01'), $customer);
+        $this->createOrder($restaurant, OrderStatus::Completed, '10.00', Carbon::parse('2026-07-15'), $customer);
+
+        $retention = app(GetOrderReport::class)->handle(
+            $restaurant,
+            Carbon::parse('2026-07-01')->startOfDay(),
+            Carbon::parse('2026-07-31')->endOfDay(),
+        )['customer_retention'];
+
+        $this->assertSame(1, $retention['returning_customers']);
+    }
+
+    public function test_a_customer_with_only_a_first_order_in_the_period_is_not_counted_as_returning(): void
+    {
+        $restaurant = Restaurant::factory()->create();
+        $customer = Customer::factory()->create(['restaurant_id' => $restaurant->id]);
+        $this->createOrder($restaurant, OrderStatus::Completed, '10.00', Carbon::parse('2026-07-15'), $customer);
+
+        $retention = app(GetOrderReport::class)->handle(
+            $restaurant,
+            Carbon::parse('2026-07-01')->startOfDay(),
+            Carbon::parse('2026-07-31')->endOfDay(),
+        )['customer_retention'];
+
+        $this->assertSame(0, $retention['returning_customers']);
+        $this->assertSame(1, $retention['customers_with_orders']);
+    }
+
+    public function test_a_customer_with_two_or_more_orders_within_the_period_is_counted_as_repeat(): void
+    {
+        $restaurant = Restaurant::factory()->create();
+        $customer = Customer::factory()->create(['restaurant_id' => $restaurant->id]);
+        $this->createOrder($restaurant, OrderStatus::Completed, '10.00', Carbon::parse('2026-07-05'), $customer);
+        $this->createOrder($restaurant, OrderStatus::Completed, '10.00', Carbon::parse('2026-07-20'), $customer);
+        $other = Customer::factory()->create(['restaurant_id' => $restaurant->id]);
+        $this->createOrder($restaurant, OrderStatus::Completed, '10.00', Carbon::parse('2026-07-20'), $other);
+
+        $retention = app(GetOrderReport::class)->handle(
+            $restaurant,
+            Carbon::parse('2026-07-01')->startOfDay(),
+            Carbon::parse('2026-07-31')->endOfDay(),
+        )['customer_retention'];
+
+        $this->assertSame(1, $retention['repeat_customers']);
+    }
+
+    public function test_customers_with_orders_counts_unique_customers_not_order_rows(): void
+    {
+        $restaurant = Restaurant::factory()->create();
+        $customer = Customer::factory()->create(['restaurant_id' => $restaurant->id]);
+        $this->createOrder($restaurant, OrderStatus::Completed, '10.00', Carbon::parse('2026-07-05'), $customer);
+        $this->createOrder($restaurant, OrderStatus::Completed, '10.00', Carbon::parse('2026-07-20'), $customer);
+
+        $retention = app(GetOrderReport::class)->handle(
+            $restaurant,
+            Carbon::parse('2026-07-01')->startOfDay(),
+            Carbon::parse('2026-07-31')->endOfDay(),
+        )['customer_retention'];
+
+        $this->assertSame(1, $retention['customers_with_orders']);
+    }
+
+    public function test_customer_retention_excludes_cancelled_orders_from_every_count(): void
+    {
+        $restaurant = Restaurant::factory()->create();
+        $customer = Customer::factory()->create(['restaurant_id' => $restaurant->id]);
+        $this->createOrder($restaurant, OrderStatus::Cancelled, '10.00', Carbon::parse('2026-06-01'), $customer);
+        $this->createOrder($restaurant, OrderStatus::Cancelled, '10.00', Carbon::parse('2026-07-15'), $customer);
+
+        $retention = app(GetOrderReport::class)->handle(
+            $restaurant,
+            Carbon::parse('2026-07-01')->startOfDay(),
+            Carbon::parse('2026-07-31')->endOfDay(),
+        )['customer_retention'];
+
+        $this->assertSame(0, $retention['customers_with_orders']);
+        $this->assertSame(0, $retention['returning_customers']);
+        $this->assertSame(0, $retention['repeat_customers']);
+    }
+
+    public function test_customer_retention_is_isolated_between_restaurants(): void
+    {
+        $restaurantA = Restaurant::factory()->create();
+        $restaurantB = Restaurant::factory()->create();
+        $customerB = Customer::factory()->create(['restaurant_id' => $restaurantB->id]);
+        $this->createOrder($restaurantB, OrderStatus::Completed, '10.00', Carbon::parse('2026-06-01'), $customerB);
+        $this->createOrder($restaurantB, OrderStatus::Completed, '10.00', Carbon::parse('2026-07-15'), $customerB);
+
+        $retention = app(GetOrderReport::class)->handle(
+            $restaurantA,
+            Carbon::parse('2026-07-01')->startOfDay(),
+            Carbon::parse('2026-07-31')->endOfDay(),
+        )['customer_retention'];
+
+        $this->assertSame(0, $retention['customers_with_orders']);
+        $this->assertSame(0, $retention['returning_customers']);
+        $this->assertSame(0, $retention['repeat_customers']);
+        $this->assertSame(0, $retention['new_customers']);
+    }
+
+    // --- N. Product revenue contribution (Phase 24) ------------------------------
+
+    public function test_top_products_revenue_percentage_reflects_share_of_period_revenue(): void
+    {
+        $restaurant = Restaurant::factory()->create();
+        $start = Carbon::parse('2026-06-01')->startOfDay();
+        $end = Carbon::parse('2026-06-30')->endOfDay();
+        $inRange = Carbon::parse('2026-06-10');
+
+        $orderA = $this->createOrder($restaurant, OrderStatus::Completed, '60.00', $inRange);
+        $orderB = $this->createOrder($restaurant, OrderStatus::Completed, '40.00', $inRange);
+
+        OrderItem::factory()->create([
+            'restaurant_id' => $restaurant->id, 'order_id' => $orderA->id,
+            'product_name' => 'A', 'quantity' => 1, 'unit_price' => '60.00', 'line_total' => '60.00',
+        ]);
+        OrderItem::factory()->create([
+            'restaurant_id' => $restaurant->id, 'order_id' => $orderB->id,
+            'product_name' => 'B', 'quantity' => 1, 'unit_price' => '40.00', 'line_total' => '40.00',
+        ]);
+
+        $topProducts = app(GetOrderReport::class)->handle($restaurant, $start, $end)['top_products'];
+
+        $this->assertSame(60.0, $topProducts->firstWhere('product_name', 'A')->revenue_percentage);
+        $this->assertSame(40.0, $topProducts->firstWhere('product_name', 'B')->revenue_percentage);
+    }
+
+    public function test_top_products_revenue_percentage_is_a_safe_zero_when_period_revenue_is_zero(): void
+    {
+        $restaurant = Restaurant::factory()->create();
+        $start = Carbon::parse('2026-06-01')->startOfDay();
+        $end = Carbon::parse('2026-06-30')->endOfDay();
+        // orders.total is 0.00 even though its item carries a positive
+        // line_total - an edge case, but revenue_percentage must never
+        // divide by the zero period revenue.
+        $order = $this->createOrder($restaurant, OrderStatus::Pending, '0.00', Carbon::parse('2026-06-10'));
+        OrderItem::factory()->create([
+            'restaurant_id' => $restaurant->id, 'order_id' => $order->id,
+            'product_name' => 'Free Sample', 'quantity' => 1, 'unit_price' => '10.00', 'line_total' => '10.00',
+        ]);
+
+        $topProducts = app(GetOrderReport::class)->handle($restaurant, $start, $end)['top_products'];
+
+        $this->assertSame(0.0, $topProducts->firstWhere('product_name', 'Free Sample')->revenue_percentage);
+    }
+
+    public function test_top_products_revenue_is_unaffected_by_a_later_product_price_change(): void
+    {
+        $restaurant = Restaurant::factory()->create();
+        $category = Category::factory()->create(['restaurant_id' => $restaurant->id]);
+        $product = Product::factory()->create(['restaurant_id' => $restaurant->id, 'category_id' => $category->id, 'price' => '10.00']);
+        $order = $this->createOrder($restaurant, OrderStatus::Completed, '10.00', Carbon::parse('2026-06-10'));
+        OrderItem::factory()->create([
+            'restaurant_id' => $restaurant->id, 'order_id' => $order->id, 'product_id' => $product->id,
+            'product_name' => $product->name, 'quantity' => 1, 'unit_price' => '10.00', 'line_total' => '10.00',
+        ]);
+
+        $product->update(['price' => '999.00']);
+
+        $topProducts = app(GetOrderReport::class)->handle(
+            $restaurant,
+            Carbon::parse('2026-06-01')->startOfDay(),
+            Carbon::parse('2026-06-30')->endOfDay(),
+        )['top_products'];
+
+        $this->assertSame('10.00', number_format((float) $topProducts->first()->total_revenue, 2, '.', ''));
+    }
+
+    // --- O. Operational performance (Phase 24) ------------------------------------
+
+    public function test_operational_performance_calculates_average_stage_durations(): void
+    {
+        $restaurant = Restaurant::factory()->create();
+
+        $order1 = $this->createOrder($restaurant, OrderStatus::Completed, '10.00', Carbon::parse('2026-10-01 10:00:00'));
+        $this->createStatusHistory($order1, OrderStatus::Pending, OrderStatus::Confirmed, Carbon::parse('2026-10-01 10:05:00'));
+        $this->createStatusHistory($order1, OrderStatus::Confirmed, OrderStatus::Preparing, Carbon::parse('2026-10-01 10:15:00'));
+        $this->createStatusHistory($order1, OrderStatus::Preparing, OrderStatus::Ready, Carbon::parse('2026-10-01 10:25:00'));
+        $this->createStatusHistory($order1, OrderStatus::Ready, OrderStatus::Completed, Carbon::parse('2026-10-01 10:40:00'));
+
+        $order2 = $this->createOrder($restaurant, OrderStatus::Completed, '10.00', Carbon::parse('2026-10-01 11:00:00'));
+        $this->createStatusHistory($order2, OrderStatus::Pending, OrderStatus::Confirmed, Carbon::parse('2026-10-01 11:10:00'));
+        $this->createStatusHistory($order2, OrderStatus::Confirmed, OrderStatus::Preparing, Carbon::parse('2026-10-01 11:25:00'));
+        $this->createStatusHistory($order2, OrderStatus::Preparing, OrderStatus::Ready, Carbon::parse('2026-10-01 11:40:00'));
+        $this->createStatusHistory($order2, OrderStatus::Ready, OrderStatus::Completed, Carbon::parse('2026-10-01 12:00:00'));
+
+        $ops = app(GetOrderReport::class)->handle(
+            $restaurant,
+            Carbon::parse('2026-10-01')->startOfDay(),
+            Carbon::parse('2026-10-01')->endOfDay(),
+        )['operational_performance'];
+
+        $this->assertSame(7.5, $ops['avg_pending_to_confirmed_minutes']);
+        $this->assertSame(12.5, $ops['avg_confirmed_to_preparing_minutes']);
+        $this->assertSame(12.5, $ops['avg_preparing_to_ready_minutes']);
+        $this->assertSame(50.0, $ops['avg_fulfillment_minutes']);
+        $this->assertSame(2, $ops['completed_sample_size']);
+    }
+
+    public function test_operational_performance_does_not_let_an_incomplete_lifecycle_distort_later_stage_averages(): void
+    {
+        $restaurant = Restaurant::factory()->create();
+        // Reaches Confirmed only - never Preparing, Ready, or Completed.
+        $order = $this->createOrder($restaurant, OrderStatus::Confirmed, '10.00', Carbon::parse('2026-10-01 10:00:00'));
+        $this->createStatusHistory($order, OrderStatus::Pending, OrderStatus::Confirmed, Carbon::parse('2026-10-01 10:05:00'));
+
+        $ops = app(GetOrderReport::class)->handle(
+            $restaurant,
+            Carbon::parse('2026-10-01')->startOfDay(),
+            Carbon::parse('2026-10-01')->endOfDay(),
+        )['operational_performance'];
+
+        $this->assertSame(5.0, $ops['avg_pending_to_confirmed_minutes']);
+        $this->assertNull($ops['avg_confirmed_to_preparing_minutes']);
+        $this->assertNull($ops['avg_preparing_to_ready_minutes']);
+        $this->assertNull($ops['avg_fulfillment_minutes']);
+        $this->assertSame(0, $ops['completed_sample_size']);
+    }
+
+    public function test_operational_performance_excludes_a_cancelled_order_from_fulfillment_time(): void
+    {
+        $restaurant = Restaurant::factory()->create();
+        $order = $this->createOrder($restaurant, OrderStatus::Cancelled, '10.00', Carbon::parse('2026-10-01 10:00:00'));
+        $this->createStatusHistory($order, OrderStatus::Pending, OrderStatus::Confirmed, Carbon::parse('2026-10-01 10:05:00'));
+        $this->createStatusHistory($order, OrderStatus::Confirmed, OrderStatus::Cancelled, Carbon::parse('2026-10-01 10:10:00'));
+
+        $ops = app(GetOrderReport::class)->handle(
+            $restaurant,
+            Carbon::parse('2026-10-01')->startOfDay(),
+            Carbon::parse('2026-10-01')->endOfDay(),
+        )['operational_performance'];
+
+        // The real pending->confirmed duration this order did reach still
+        // contributes; fulfillment (which it never reached) does not.
+        $this->assertSame(5.0, $ops['avg_pending_to_confirmed_minutes']);
+        $this->assertNull($ops['avg_fulfillment_minutes']);
+        $this->assertSame(0, $ops['completed_sample_size']);
+    }
+
+    public function test_operational_performance_is_all_null_with_a_zero_sample_when_no_status_history_exists(): void
+    {
+        $restaurant = Restaurant::factory()->create();
+        $this->createOrder($restaurant, OrderStatus::Pending, '10.00', Carbon::parse('2026-10-01'));
+
+        $ops = app(GetOrderReport::class)->handle(
+            $restaurant,
+            Carbon::parse('2026-10-01')->startOfDay(),
+            Carbon::parse('2026-10-01')->endOfDay(),
+        )['operational_performance'];
+
+        $this->assertNull($ops['avg_pending_to_confirmed_minutes']);
+        $this->assertNull($ops['avg_confirmed_to_preparing_minutes']);
+        $this->assertNull($ops['avg_preparing_to_ready_minutes']);
+        $this->assertNull($ops['avg_fulfillment_minutes']);
+        $this->assertSame(0, $ops['completed_sample_size']);
+    }
+
+    public function test_operational_performance_scopes_by_the_orders_own_creation_date_not_the_status_change_date(): void
+    {
+        $restaurant = Restaurant::factory()->create();
+        // Created before the selected period; its status change happened
+        // to land inside it - must still be excluded, since every other
+        // metric in this report is scoped by the order's own created_at.
+        $order = $this->createOrder($restaurant, OrderStatus::Confirmed, '10.00', Carbon::parse('2026-09-30 23:00:00'));
+        $this->createStatusHistory($order, OrderStatus::Pending, OrderStatus::Confirmed, Carbon::parse('2026-10-01 09:00:00'));
+
+        $ops = app(GetOrderReport::class)->handle(
+            $restaurant,
+            Carbon::parse('2026-10-01')->startOfDay(),
+            Carbon::parse('2026-10-01')->endOfDay(),
+        )['operational_performance'];
+
+        $this->assertNull($ops['avg_pending_to_confirmed_minutes']);
+        $this->assertSame(0, $ops['completed_sample_size']);
+    }
+
+    public function test_operational_performance_is_isolated_between_restaurants(): void
+    {
+        $restaurantA = Restaurant::factory()->create();
+        $restaurantB = Restaurant::factory()->create();
+        $orderB = $this->createOrder($restaurantB, OrderStatus::Completed, '10.00', Carbon::parse('2026-10-01 10:00:00'));
+        $this->createStatusHistory($orderB, OrderStatus::Pending, OrderStatus::Confirmed, Carbon::parse('2026-10-01 10:05:00'));
+        $this->createStatusHistory($orderB, OrderStatus::Ready, OrderStatus::Completed, Carbon::parse('2026-10-01 10:40:00'));
+
+        $ops = app(GetOrderReport::class)->handle(
+            $restaurantA,
+            Carbon::parse('2026-10-01')->startOfDay(),
+            Carbon::parse('2026-10-01')->endOfDay(),
+        )['operational_performance'];
+
+        $this->assertNull($ops['avg_pending_to_confirmed_minutes']);
+        $this->assertNull($ops['avg_fulfillment_minutes']);
+        $this->assertSame(0, $ops['completed_sample_size']);
+    }
+
+    // --- P. Reports page renders the new sections (Phase 24) ---------------------
+
+    public function test_the_reports_page_renders_the_new_analytics_sections_without_error(): void
+    {
+        $restaurant = Restaurant::factory()->create();
+        $owner = $this->createOwner($restaurant);
+        $customer = Customer::factory()->create(['restaurant_id' => $restaurant->id]);
+        $order = $this->createOrder($restaurant, OrderStatus::Completed, '10.00', Carbon::parse('2026-10-01 10:00:00'), $customer);
+        $this->createStatusHistory($order, OrderStatus::Pending, OrderStatus::Confirmed, Carbon::parse('2026-10-01 10:05:00'));
+
+        $this->travelTo(Carbon::parse('2026-10-01 12:00:00'));
+        $this->actingAs($owner);
+
+        Volt::test('reports.orders')
+            ->assertOk()
+            ->assertSee(__('Compared to previous period'))
+            ->assertSee(__('Customer behavior'))
+            ->assertSee(__('Operational performance'));
+
+        $this->travelBack();
+    }
+
+    public function test_the_reports_page_renders_safely_with_completely_empty_data(): void
+    {
+        $owner = $this->createOwner(Restaurant::factory()->create());
+        $this->actingAs($owner);
+
+        Volt::test('reports.orders')->assertOk();
     }
 }

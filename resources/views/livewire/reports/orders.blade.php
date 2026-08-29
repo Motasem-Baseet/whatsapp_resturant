@@ -117,6 +117,64 @@ new #[Layout('components.layouts.app')] class extends Component {
 
         return app(GetOrderReport::class)->handle(Auth::user()->restaurant, $start, $end);
     }
+
+    /**
+     * Display-only metadata for comparison() metrics - labels and
+     * whether a value is currency (2 decimals) or a plain count.
+     * Presentation formatting only; the metrics themselves are computed
+     * entirely by GetOrderReport.
+     *
+     * @return array<string, array{label: string, currency: bool}>
+     */
+    protected function comparisonMetricMeta(): array
+    {
+        return [
+            'revenue' => ['label' => __('Revenue'), 'currency' => true],
+            'total_orders' => ['label' => __('Total orders'), 'currency' => false],
+            'completed_orders' => ['label' => __('Completed orders'), 'currency' => false],
+            'average_order_value' => ['label' => __('Average order value'), 'currency' => false],
+            'new_customers' => ['label' => __('New customers'), 'currency' => false],
+        ];
+    }
+
+    public function comparisonMetricLabel(string $key): string
+    {
+        return $this->comparisonMetricMeta()[$key]['label'] ?? $key;
+    }
+
+    protected function isCurrencyMetric(string $key): bool
+    {
+        return $this->comparisonMetricMeta()[$key]['currency'] ?? false;
+    }
+
+    public function formatComparisonValue(string $key, float $value): string
+    {
+        return $this->isCurrencyMetric($key) ? number_format($value, 2) : number_format($value, 0);
+    }
+
+    public function formatComparisonChange(string $key, float $change): string
+    {
+        $formatted = $this->isCurrencyMetric($key) ? number_format(abs($change), 2) : number_format(abs($change), 0);
+        $sign = $change > 0 ? '+' : ($change < 0 ? '-' : '');
+
+        return $sign.$formatted;
+    }
+
+    /**
+     * "New" for a null percentage (previous period was zero and current
+     * is above zero - a mathematically undefined/infinite percentage,
+     * never fabricated as a number), otherwise a signed percentage.
+     */
+    public function formatPercentageChange(?float $percentageChange): string
+    {
+        if ($percentageChange === null) {
+            return __('New');
+        }
+
+        $sign = $percentageChange > 0 ? '+' : '';
+
+        return "{$sign}{$percentageChange}%";
+    }
 }; ?>
 
 <section class="w-full">
@@ -161,6 +219,39 @@ new #[Layout('components.layouts.app')] class extends Component {
         </div>
     </div>
 
+    <div class="mt-6 rounded-xl border border-neutral-200 p-4 dark:border-neutral-700">
+        <div class="flex items-center justify-between">
+            <flux:subheading>{{ __('Compared to previous period') }}</flux:subheading>
+            <span class="text-sm text-zinc-500">
+                {{ $this->report['comparison']['previous_period']['start']->format('M j, Y') }}
+                &ndash;
+                {{ $this->report['comparison']['previous_period']['end']->format('M j, Y') }}
+            </span>
+        </div>
+
+        <flux:table class="mt-3">
+            <flux:table.columns>
+                <flux:table.column>{{ __('Metric') }}</flux:table.column>
+                <flux:table.column>{{ __('Current') }}</flux:table.column>
+                <flux:table.column>{{ __('Previous') }}</flux:table.column>
+                <flux:table.column>{{ __('Change') }}</flux:table.column>
+                <flux:table.column>{{ __('% change') }}</flux:table.column>
+            </flux:table.columns>
+
+            <flux:table.rows>
+                @foreach ($this->report['comparison']['metrics'] as $key => $metric)
+                    <flux:table.row wire:key="comparison-{{ $key }}">
+                        <flux:table.cell>{{ $this->comparisonMetricLabel($key) }}</flux:table.cell>
+                        <flux:table.cell>{{ $this->formatComparisonValue($key, (float) $metric['current']) }}</flux:table.cell>
+                        <flux:table.cell>{{ $this->formatComparisonValue($key, (float) $metric['previous']) }}</flux:table.cell>
+                        <flux:table.cell>{{ $this->formatComparisonChange($key, (float) $metric['change']) }}</flux:table.cell>
+                        <flux:table.cell>{{ $this->formatPercentageChange($metric['percentage_change']) }}</flux:table.cell>
+                    </flux:table.row>
+                @endforeach
+            </flux:table.rows>
+        </flux:table>
+    </div>
+
     <div class="mt-6 grid gap-6 lg:grid-cols-2">
         <div class="rounded-xl border border-neutral-200 p-4 dark:border-neutral-700">
             <flux:subheading>{{ __('Revenue over time') }}</flux:subheading>
@@ -184,6 +275,18 @@ new #[Layout('components.layouts.app')] class extends Component {
                     @endforelse
                 </flux:table.rows>
             </flux:table>
+
+            @if ($this->report['best_period'] !== null)
+                @php $best = $this->report['best_period']; @endphp
+                <div class="mt-3 rounded-lg bg-zinc-50 p-3 text-sm dark:bg-zinc-800">
+                    {{ $best['unit'] === 'day' ? __('Best day') : __('Best week') }}:
+                    <span class="font-semibold">{{ $best['label'] }}</span>
+                    &mdash; {{ number_format((float) $best['revenue'], 2) }} {{ __('revenue') }}
+                    ({{ __(':count orders', ['count' => $best['order_count']]) }})
+                </div>
+            @else
+                <p class="mt-3 text-sm text-zinc-500">{{ __('No revenue in this period yet.') }}</p>
+            @endif
         </div>
 
         <div class="rounded-xl border border-neutral-200 p-4 dark:border-neutral-700">
@@ -219,6 +322,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                     <flux:table.column>{{ __('Quantity') }}</flux:table.column>
                     <flux:table.column>{{ __('Orders') }}</flux:table.column>
                     <flux:table.column>{{ __('Revenue') }}</flux:table.column>
+                    <flux:table.column>{{ __('% of revenue') }}</flux:table.column>
                 </flux:table.columns>
 
                 <flux:table.rows>
@@ -228,10 +332,11 @@ new #[Layout('components.layouts.app')] class extends Component {
                             <flux:table.cell>{{ $product->total_quantity }}</flux:table.cell>
                             <flux:table.cell>{{ $product->order_count }}</flux:table.cell>
                             <flux:table.cell>{{ number_format((float) $product->total_revenue, 2) }}</flux:table.cell>
+                            <flux:table.cell>{{ $product->revenue_percentage }}%</flux:table.cell>
                         </flux:table.row>
                     @empty
                         <flux:table.row>
-                            <flux:table.cell colspan="4" class="text-center text-zinc-500">{{ __('No products ordered in this period.') }}</flux:table.cell>
+                            <flux:table.cell colspan="5" class="text-center text-zinc-500">{{ __('No products ordered in this period.') }}</flux:table.cell>
                         </flux:table.row>
                     @endforelse
                 </flux:table.rows>
@@ -265,6 +370,57 @@ new #[Layout('components.layouts.app')] class extends Component {
                     @endforelse
                 </flux:table.rows>
             </flux:table>
+        </div>
+    </div>
+
+    <div class="mt-6 grid gap-6 lg:grid-cols-2">
+        <div class="rounded-xl border border-neutral-200 p-4 dark:border-neutral-700">
+            <flux:subheading>{{ __('Customer behavior') }}</flux:subheading>
+
+            @php $retention = $this->report['customer_retention']; @endphp
+            <div class="mt-3 grid grid-cols-2 gap-4">
+                <div>
+                    <p class="text-sm text-zinc-500">{{ __('New customers') }}</p>
+                    <p class="text-xl font-semibold">{{ $retention['new_customers'] }}</p>
+                </div>
+                <div>
+                    <p class="text-sm text-zinc-500">{{ __('Returning customers') }}</p>
+                    <p class="text-xl font-semibold">{{ $retention['returning_customers'] }}</p>
+                </div>
+                <div>
+                    <p class="text-sm text-zinc-500">{{ __('Repeat customers') }}</p>
+                    <p class="text-xl font-semibold">{{ $retention['repeat_customers'] }}</p>
+                </div>
+                <div>
+                    <p class="text-sm text-zinc-500">{{ __('Customers with orders') }}</p>
+                    <p class="text-xl font-semibold">{{ $retention['customers_with_orders'] }}</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="rounded-xl border border-neutral-200 p-4 dark:border-neutral-700">
+            <flux:subheading>{{ __('Operational performance') }}</flux:subheading>
+
+            @php $ops = $this->report['operational_performance']; @endphp
+            <div class="mt-3 grid grid-cols-2 gap-4">
+                <div>
+                    <p class="text-sm text-zinc-500">{{ __('Pending → Confirmed') }}</p>
+                    <p class="text-xl font-semibold">{{ $ops['avg_pending_to_confirmed_minutes'] !== null ? __(':minutes min', ['minutes' => $ops['avg_pending_to_confirmed_minutes']]) : __('No data') }}</p>
+                </div>
+                <div>
+                    <p class="text-sm text-zinc-500">{{ __('Confirmed → Preparing') }}</p>
+                    <p class="text-xl font-semibold">{{ $ops['avg_confirmed_to_preparing_minutes'] !== null ? __(':minutes min', ['minutes' => $ops['avg_confirmed_to_preparing_minutes']]) : __('No data') }}</p>
+                </div>
+                <div>
+                    <p class="text-sm text-zinc-500">{{ __('Preparing → Ready') }}</p>
+                    <p class="text-xl font-semibold">{{ $ops['avg_preparing_to_ready_minutes'] !== null ? __(':minutes min', ['minutes' => $ops['avg_preparing_to_ready_minutes']]) : __('No data') }}</p>
+                </div>
+                <div>
+                    <p class="text-sm text-zinc-500">{{ __('Avg. fulfillment time') }}</p>
+                    <p class="text-xl font-semibold">{{ $ops['avg_fulfillment_minutes'] !== null ? __(':minutes min', ['minutes' => $ops['avg_fulfillment_minutes']]) : __('No data') }}</p>
+                </div>
+            </div>
+            <p class="mt-3 text-sm text-zinc-500">{{ __('Based on :count completed orders.', ['count' => $ops['completed_sample_size']]) }}</p>
         </div>
     </div>
 </section>

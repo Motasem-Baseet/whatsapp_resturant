@@ -299,13 +299,22 @@ class GetOrderReport
      * 31-day "this month" is compared against the preceding 31 days,
      * not strictly the previous calendar month, which may be shorter).
      *
+     * Duration is measured in whole days via startOfDay()-normalized
+     * bounds (the same technique revenueOverTimePoints() uses for
+     * totalDays above) rather than diffInSeconds() on the raw bounds -
+     * $endDate carries endOfDay()'s trailing .999999 microseconds,
+     * which previously rounded a whole-day duration up to one second
+     * over a day boundary and shifted the previous period an extra day
+     * too far back.
+     *
      * @return array{0: Carbon, 1: Carbon}
      */
     private function previousPeriodBounds(Carbon $startDate, Carbon $endDate): array
     {
-        $durationInSeconds = $startDate->diffInSeconds($endDate) + 1;
-        $previousEnd = $startDate->copy()->subSecond();
-        $previousStart = $previousEnd->copy()->subSeconds($durationInSeconds - 1);
+        $totalDays = $startDate->copy()->startOfDay()->diffInDays($endDate->copy()->startOfDay()) + 1;
+
+        $previousEnd = $startDate->copy()->subDay()->endOfDay();
+        $previousStart = $startDate->copy()->subDays($totalDays)->startOfDay();
 
         return [$previousStart, $previousEnd];
     }
